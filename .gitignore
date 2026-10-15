@@ -1,0 +1,14 @@
+# Secrets: never commit the FloodHub API key
+FloodHub API Key.txt
+*.key
+.env
+
+# Large downloads and intermediates (rebuild with scripts/run_all.py --full)
+data/raw/
+data/processed/*
+!data/processed/district_exposure.csv
+
+# Local tooling
+.claude/
+__pycache__/
+*.pyc

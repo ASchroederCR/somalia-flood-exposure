@@ -1,0 +1,543 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Somalia El Niño Flood Exposure</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
+<style>
+/* Layout: one-screen operations console on black. Left rail = summary → controls → ranked districts; right = map drawn only from our own layers (no basemap).
+   Colour roles (validated for colour-blind separation on #000): water = cyan (FloodHub) / royal blue (2023 extent);
+   gauges = one orange ramp (circles); IDP sites = violet / white when at risk (squares); exposure index = neutral grey ramp, so no hue is shared with the hazards. */
+:root{
+  color-scheme:dark;
+  --ground:#000000; --panel:#0b0b0b; --ink:#ececec; --muted:#9a9a9a; --line:#262626;
+  --sea:#000000; --accent:#f0f0f0;
+  --river:#0fa5c0; --flood23:#2a50d6;
+  --sev0:#6b6b6b; --sev1:#f5a05a; --sev2:#e25a14; --sev3:#a8320a;
+  --r0:#1c1c1c; --r1:#454545; --r2:#6e6e6e; --r3:#9e9e9e; --r4:#dcdcdc;
+  --site:#a275f2; --site-risk:#ffffff; --road:#6e6e6e; --road-hit:#e3c91c; --pop:#4caf50; --bldg:#e3c91c;
+  --f-display:"Roboto",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-body:"Roboto",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-data:"Roboto",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+
+/* ---- Leaflet 1.9 core styles (inlined: external stylesheets are blocked) ---- */
+.leaflet-pane,.leaflet-tile,.leaflet-marker-icon,.leaflet-marker-shadow,.leaflet-tile-container,.leaflet-pane>svg,.leaflet-pane>canvas,.leaflet-zoom-box,.leaflet-image-layer,.leaflet-layer{position:absolute;left:0;top:0}
+.leaflet-container{overflow:hidden;-webkit-tap-highlight-color:transparent;outline-offset:1px}
+.leaflet-container img.leaflet-image-layer,.leaflet-container .leaflet-overlay-pane svg{max-width:none!important;max-height:none!important}
+.leaflet-container.leaflet-touch-zoom{touch-action:pan-x pan-y}.leaflet-container.leaflet-touch-drag{touch-action:none}.leaflet-container.leaflet-touch-drag.leaflet-touch-zoom{touch-action:none}
+.leaflet-image-layer{image-rendering:pixelated}
+.leaflet-pane{z-index:400}.leaflet-tile-pane{z-index:200}.leaflet-overlay-pane{z-index:400}.leaflet-shadow-pane{z-index:500}.leaflet-marker-pane{z-index:600}.leaflet-tooltip-pane{z-index:650}.leaflet-popup-pane{z-index:700}.leaflet-map-pane canvas{z-index:100}.leaflet-map-pane svg{z-index:200}
+.leaflet-control{position:relative;z-index:800;pointer-events:auto;float:left;clear:both}
+.leaflet-top,.leaflet-bottom{position:absolute;z-index:1000;pointer-events:none}.leaflet-top{top:0}.leaflet-right{right:0}.leaflet-bottom{bottom:0}.leaflet-left{left:0}
+.leaflet-right .leaflet-control{float:right}.leaflet-top .leaflet-control{margin-top:10px}.leaflet-bottom .leaflet-control{margin-bottom:10px}.leaflet-left .leaflet-control{margin-left:10px}.leaflet-right .leaflet-control{margin-right:10px}
+.leaflet-fade-anim .leaflet-popup{opacity:0;transition:opacity .2s linear}.leaflet-fade-anim .leaflet-map-pane .leaflet-popup{opacity:1}
+.leaflet-zoom-animated{transform-origin:0 0}.leaflet-zoom-anim .leaflet-zoom-animated{transition:transform .25s cubic-bezier(0,0,.25,1)}.leaflet-zoom-anim .leaflet-zoom-hide{visibility:hidden}
+.leaflet-interactive{cursor:pointer}.leaflet-grab{cursor:grab}.leaflet-dragging .leaflet-grab,.leaflet-dragging .leaflet-grab .leaflet-interactive{cursor:move}
+.leaflet-marker-icon,.leaflet-image-layer,.leaflet-pane>svg path,.leaflet-tile-container{pointer-events:none}
+.leaflet-marker-icon.leaflet-interactive,.leaflet-pane>svg path.leaflet-interactive{pointer-events:auto}
+.leaflet-bar{border-radius:4px;border:1px solid var(--line);background:var(--panel)}
+.leaflet-bar a{display:block;width:30px;height:30px;line-height:30px;text-align:center;text-decoration:none;color:var(--ink);font:600 18px/30px var(--f-data)}
+.leaflet-bar a+a{border-top:1px solid var(--line)}.leaflet-bar a:hover{background:var(--ground)}
+.leaflet-popup{position:absolute;text-align:center;margin-bottom:20px}
+.leaflet-popup-content-wrapper{padding:1px;text-align:left;border-radius:6px;background:var(--panel);color:var(--ink);box-shadow:0 4px 16px rgb(0 0 0 / .25)}
+.leaflet-popup-content{width:auto!important;margin:12px 26px 12px 14px;line-height:1.35;min-height:1px;font:13px/1.4 var(--f-body)}
+.leaflet-popup-tip-container{width:40px;height:20px;position:absolute;left:50%;margin-top:-1px;margin-left:-20px;overflow:hidden;pointer-events:none}
+.leaflet-popup-tip{width:17px;height:17px;padding:1px;margin:-10px auto 0;transform:rotate(45deg);background:var(--panel)}
+.leaflet-popup-close-button{position:absolute;top:2px;right:4px;border:none;width:24px;height:24px;font:18px/24px var(--f-body);color:var(--muted);text-decoration:none;background:transparent}
+.leaflet-tooltip{position:absolute;padding:4px 8px;border-radius:4px;white-space:nowrap;pointer-events:none;background:var(--panel);color:var(--ink);border:1px solid var(--line);font:12px var(--f-body);box-shadow:0 2px 6px rgb(0 0 0 / .2)}
+.leaflet-control-scale-line{border:2px solid var(--muted);border-top:none;padding:0 5px;font:11px var(--f-data);color:var(--ink);background:color-mix(in srgb,var(--panel) 80%,transparent)}
+.leaflet-control-attribution{font:11px var(--f-body);color:var(--muted);background:color-mix(in srgb,var(--panel) 85%,transparent);padding:0 6px;margin:0!important}
+.leaflet-control-attribution a{color:var(--accent)}
+
+/* ---- App ---- */
+html,body{height:100%}
+body{background:var(--ground);color:var(--ink);font:14px/1.45 var(--f-body);margin:0}
+.app{display:grid;grid-template-columns:minmax(340px,420px) 1fr;height:100%}
+.rail{overflow-y:auto;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-width:0}
+.rail section{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
+h1{font:700 24px/1.1 var(--f-display);letter-spacing:.01em;margin:0;text-wrap:balance;text-transform:uppercase}
+h2{font:600 15px/1.1 var(--f-display);text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0}
+.sub{color:var(--muted);font-size:13px;margin:0}
+.data{font-family:var(--f-data);font-variant-numeric:tabular-nums}
+.event{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;align-items:baseline;padding:10px 12px;border:1px solid var(--line);border-left:4px solid var(--sev2);border-radius:4px;background:var(--ground)}
+.event b{font:700 20px/1 var(--f-display);font-variant-numeric:tabular-nums}
+.event span{font-size:12.5px;color:var(--muted)}
+.event .head{grid-column:1/-1;font:600 12px var(--f-data);text-transform:uppercase;letter-spacing:.06em;color:var(--sev2)}
+table{border-collapse:collapse;width:100%}
+.cmp th,.cmp td{padding:5px 0;border-bottom:1px solid var(--line);text-align:right;font-size:13px}
+.cmp th:first-child,.cmp td:first-child{text-align:left;font-weight:400;color:var(--muted)}
+.cmp thead th{font:600 11px var(--f-data);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.cmp td.data{font-size:13px}
+.seg{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:5px;overflow:hidden}
+.seg button{all:unset;cursor:pointer;text-align:center;padding:8px 6px;font:600 13px var(--f-body);color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--panel)}
+.seg button:focus-visible,.chk input:focus-visible,input[type=range]:focus-visible,tr[tabindex]:focus-visible,.linkbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.w{display:grid;grid-template-columns:1fr 110px 34px;align-items:center;gap:8px;font-size:13px}
+.w input{width:100%;accent-color:var(--accent)}
+.w output{text-align:right;font:12px var(--f-data);color:var(--muted)}
+.layers{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px}
+.chk{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer}
+.chk input{accent-color:var(--accent);margin:0}
+.sw{width:14px;height:10px;border-radius:2px;flex:none}
+.tablewrap{overflow:auto;max-height:420px;border:1px solid var(--line);border-radius:4px}
+.rank{font-size:13px}
+.rank th{position:sticky;top:0;background:var(--panel);font:600 11px var(--f-data);text-transform:uppercase;letter-spacing:.05em;color:var(--muted);text-align:right;padding:6px 8px;border-bottom:1px solid var(--line);z-index:1}
+.rank th:nth-child(2){text-align:left}
+.rank td{padding:5px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+.rank td:nth-child(2){text-align:left;white-space:normal}
+.rank td small{color:var(--muted);display:block;font-size:11.5px}
+.rank tr[tabindex]{cursor:pointer}.rank tr[tabindex]:hover{background:var(--ground)}
+.rank tr.on{background:color-mix(in srgb,var(--accent) 14%,transparent)}
+.bar{display:inline-block;height:8px;border-radius:2px;background:var(--accent);vertical-align:middle;margin-right:6px}
+.chip{display:inline-block;padding:1px 6px;border-radius:3px;font:600 10.5px var(--f-data);text-transform:uppercase;letter-spacing:.03em;color:#fff}
+.chip.s0{background:var(--sev0)}.chip.s1{background:var(--sev1);color:#1a0d00}.chip.s2{background:var(--sev2)}.chip.s3{background:var(--sev3)}.chip.sn{background:transparent;color:var(--muted);border:1px solid var(--line)}
+.detail{display:flex;flex-direction:column;gap:10px}
+.detail h3{font:700 20px/1.1 var(--f-display);margin:0;text-transform:uppercase}
+.comp{display:grid;grid-template-columns:150px 1fr 40px;gap:6px;align-items:center;font-size:12.5px}
+.comp .track{height:8px;background:var(--ground);border-radius:2px;overflow:hidden}
+.comp .fill{height:100%;background:var(--accent)}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:2px 16px}
+.stats div{display:flex;justify-content:space-between;gap:8px;border-bottom:1px dotted var(--line);padding:3px 0;font-size:12.5px}
+.stats dt{color:var(--muted)}.stats dd{margin:0;font-family:var(--f-data);font-variant-numeric:tabular-nums}
+.linkbtn{all:unset;cursor:pointer;color:var(--accent);font-weight:600;font-size:13px}
+.mapwrap{position:relative;min-width:0}
+#map{position:absolute;inset:0;background:var(--sea)}
+.legend{background:color-mix(in srgb,var(--panel) 92%,transparent);border:1px solid var(--line);border-radius:5px;padding:10px 12px;font-size:12px;display:flex;flex-direction:column;gap:6px;max-width:230px;color:var(--ink)}
+.legend h4{margin:0;font:600 12px var(--f-display);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.ramp{display:flex;height:10px;border-radius:2px;overflow:hidden}.ramp i{flex:1}
+.ramp-l{display:flex;justify-content:space-between;font:10.5px var(--f-data);color:var(--muted)}
+.lg{display:flex;align-items:center;gap:6px}
+.dot{width:10px;height:10px;border-radius:50%;flex:none;border:1px solid var(--panel)}
+.dot.sq{border-radius:1px}
+.howto{display:flex;flex-direction:column;gap:8px;font-size:13px;padding:12px;border:1px solid var(--line);border-radius:5px;background:var(--ground)}
+.howto h3{margin:0;font:500 13px var(--f-display);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.howto p{margin:0;max-width:65ch}
+.howto .formula{font:500 13.5px var(--f-data);padding:8px 10px;border-radius:4px;background:var(--panel);border:1px solid var(--line);overflow-x:auto;white-space:nowrap}
+.howto table{font-size:12.5px}
+.howto th,.howto td{text-align:left;vertical-align:top;padding:5px 6px 5px 0;border-bottom:1px solid var(--line)}
+.howto th{font:500 11px var(--f-data);text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.howto td.wt{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.howto td small{display:block;color:var(--muted)}
+.methods{font-size:13px;color:var(--ink)}
+.hydro{display:block;margin-top:8px;overflow:visible}
+.hydro text{font:10.5px var(--f-data);fill:var(--muted)}
+.hydro .lbl{font-weight:500}
+.hydro .grid{stroke:var(--line);stroke-width:1}
+.hydro .series{fill:none;stroke:var(--accent);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.hydro .past{stroke-dasharray:3 3;opacity:.7}
+.hydro .pt{fill:var(--accent);stroke:var(--panel);stroke-width:2}
+.hydro .hit{fill:transparent;cursor:crosshair}
+.hydro .now{stroke:var(--ink);stroke-width:1;stroke-dasharray:2 2;opacity:.6}
+.hydro .tip[hidden]{display:none}
+.hydro .tip rect{fill:var(--ink)} .hydro .tip text{fill:var(--panel);font-weight:500}
+.gp-head{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.gp-meta{color:var(--muted);font-size:12px}
+.legend .tg{display:flex;align-items:center;gap:6px;cursor:pointer}
+.legend .tg input{margin:0;accent-color:var(--accent)}
+.legend .off .lg{opacity:.4}
+.methods p,.methods li{margin:0 0 6px;max-width:65ch}
+.methods ul{padding-left:18px;margin:0}
+.methods a{color:var(--accent)}
+details summary{cursor:pointer;font:600 15px var(--f-display);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.loading{position:absolute;inset:auto 0 0 0;padding:8px;text-align:center;font:12px var(--f-data);color:var(--muted)}
+@media (max-width:820px){
+  html,body{height:auto}
+  .app{display:flex;flex-direction:column-reverse;height:auto}
+  .mapwrap{height:62vh;min-height:360px}
+  .rail{border-right:none}
+  .tablewrap{max-height:360px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="app">
+  <aside class="rail">
+    <section>
+      <h1>Somalia El Niño Flood Exposure</h1>
+      <p class="sub">District exposure to the live Google FloodHub forecast, compared with the 2023 Deyr floods (the last El Niño / positive-IOD season). <span id="stamp" class="data"></span></p>
+      <div class="event" id="event"><span class="head">Loading FloodHub…</span></div>
+    </section>
+
+    <section>
+      <h2>Exposure snapshot</h2>
+      <table class="cmp" id="cmp"><thead><tr><th></th><th>Live forecast</th><th>2023 analog</th></tr></thead><tbody></tbody></table>
+      <p class="sub">Forecast counts use FloodHub's event footprint, a broad outline around the expected flooding, so read them as an upper bound.</p>
+    </section>
+
+    <section>
+      <h2>Hazard scenario</h2>
+      <div class="seg" role="group" aria-label="Hazard scenario">
+        <button id="m-fh" aria-pressed="true">Live FloodHub forecast</button>
+        <button id="m-h23" aria-pressed="false">2023 El Niño floods</button>
+      </div>
+      <h2 style="margin-top:6px">Index weights</h2>
+      <div id="weights"></div>
+      <div class="howto" id="howto" aria-live="polite"></div>
+    </section>
+
+    <section id="detailSec" hidden><div class="detail" id="detail"></div></section>
+
+    <section>
+      <h2>Districts ranked by exposure index</h2>
+      <div class="tablewrap"><table class="rank" id="rank"><thead><tr><th>#</th><th>District</th><th>Index</th><th id="th-pop">People</th><th>Gauges</th></tr></thead><tbody></tbody></table></div>
+    </section>
+
+    <section>
+      <h2>Map layers</h2>
+      <div class="layers" id="layers"></div>
+    </section>
+
+    <section>
+      <details class="methods">
+        <summary>Sources &amp; method</summary>
+        <div id="methods" style="margin-top:10px"></div>
+      </details>
+    </section>
+  </aside>
+  <div class="mapwrap"><div id="map" role="application" aria-label="Map of Somalia flood exposure"></div><div class="loading" id="loading">Loading layers…</div></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+(async function(){
+const $ = s => document.querySelector(s);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = n => n==null||isNaN(n) ? '–' : n>=1e6 ? (n/1e6).toFixed(n>=1e7?1:2)+'M' : n>=1e4 ? Math.round(n/1e3)+'k' : n>=1e3 ? (n/1e3).toFixed(1)+'k' : Math.round(n).toLocaleString();
+const full = n => Math.round(n).toLocaleString();
+const SEVN = ['No flooding','Above normal','Severe','Extreme'];
+const SEVK = {NO_FLOODING:0,ABOVE_NORMAL:1,SEVERE:2,EXTREME:3};
+
+const get = f => fetch('data/'+f).then(r=>{ if(!r.ok) throw new Error(f+' '+r.status); return f.endsWith('.json')||f.endsWith('.geojson') ? r.json() : r; });
+const [S, R, dist, regions, fhz, gauges, sites, roads, FC] = await Promise.all(
+  ['summary.json','rasters.json','districts.geojson','regions.geojson','floodhub_zones.geojson','gauges.geojson','idp_sites.geojson','roads_major.geojson','gauge_forecasts.json'].map(get));
+
+// ---------- header + snapshot
+const ev = (S.floodhub.significant||[])[0];
+const d = s => new Date(s).toLocaleDateString('en-GB',{day:'numeric',month:'short',timeZone:'UTC'});
+$('#stamp').textContent = 'FloodHub pulled ' + new Date(S.floodhub.pulled_utc).toUTCString().replace(':00 GMT',' UTC').slice(5);
+$('#event').innerHTML = ev ? `
+  <span class="head">FloodHub significant event · ${d(ev.start)} – ${d(ev.end)}</span>
+  <b>${full(ev.fh_affected_pop)}</b><span>people affected (FloodHub estimate)</span>
+  <b>${full(ev.area_km2)}</b><span>km² flooded area · ${ev.n_gauges} gauges in event</span>
+  <b>${(S.gauges_by_sev.SEVERE||0)+(S.gauges_by_sev.EXTREME||0)}</b><span>of ${S.floodhub.n_gauges.toLocaleString()} Somali gauges forecast severe or extreme</span>`
+  : `<span class="head">No significant FloodHub event active</span><span style="grid-column:1/-1">${S.floodhub.n_flash_events} flash-flood alerts · ${S.floodhub.n_gauges} gauges</span>`;
+const rows = [
+  ['People in flood zone', S.pop_fh, S.pop_2023],
+  ['Buildings (Overture)', S.bldg_fh, S.bldg_2023],
+  ['Roads, all (km)', S.road_km_fh, S.road_km_2023],
+  ['Trunk–secondary roads (km)', S.mroad_km_fh, S.mroad_km_2023],
+  ['IDP sites ≤1 km', S.sites_fh, S.sites_2023],
+  ['People in those sites', S.site_ind_fh, S.site_ind_2023],
+  ['Hazard area in Somalia (km²)', S.haz_km2_fh, S.haz_km2_2023],
+];
+$('#cmp tbody').innerHTML = rows.map(r=>`<tr><td>${r[0]}</td><td class="data">${fmt(r[1])}</td><td class="data">${fmt(r[2])}</td></tr>`).join('');
+
+// ---------- index model
+const COMP = [
+  {k:'pop',   label:'People in flood zone',     fh:'pop_fh',      h23:'pop_2023',      w:35},
+  {k:'idp',   label:'IDPs in sites ≤1 km',      fh:'site_ind_fh', h23:'site_ind_2023', w:20},
+  {k:'gauge', label:'Gauge forecast severity',  fh:'gauge_score', h23:'gauge_score',   w:20, linear:true},
+  {k:'bldg',  label:'Buildings in flood zone',  fh:'bldg_fh',     h23:'bldg_2023',     w:15},
+  {k:'stock', label:'IDP caseload (IOM DTM)',   fh:'idp_dtm',     h23:'idp_dtm',       w:10},
+];
+let mode = 'fh', selected = null;
+try { const m = localStorage.getItem('som-mode'); if (m==='fh'||m==='h23') mode = m; } catch(e){}
+const F = dist.features;
+function computeIndex(){
+  const tw = COMP.reduce((a,c)=>a+c.w,0) || 1;
+  const norms = {};
+  for (const c of COMP){
+    const v = F.map(f => c.linear ? f.properties[c[mode]]/100 : Math.log1p(f.properties[c[mode]]||0));
+    const mx = Math.max(...v) || 1;
+    norms[c.k] = v.map(x => c.linear ? x : x/mx);
+  }
+  F.forEach((f,i)=>{
+    f.properties._n = Object.fromEntries(COMP.map(c=>[c.k, norms[c.k][i]]));
+    f.properties._idx = COMP.reduce((a,c)=>a + c.w*norms[c.k][i], 0) / tw * 100;
+  });
+  const order = [...F].sort((a,b)=>b.properties._idx-a.properties._idx);
+  order.forEach((f,i)=>f.properties._rank=i+1);
+  return order;
+}
+
+// weights UI
+$('#weights').innerHTML = COMP.map(c=>`<div class="w"><label for="w-${c.k}">${c.label}</label><input type="range" id="w-${c.k}" min="0" max="50" step="5" value="${c.w}"><output id="o-${c.k}" class="data">${c.w}</output></div>`).join('');
+COMP.forEach(c=>{
+  $('#w-'+c.k).addEventListener('input', e=>{ c.w = +e.target.value; $('#o-'+c.k).textContent = c.w; refresh(); });
+});
+
+// ---------- map
+const map = L.map('map', {zoomControl:true, attributionControl:true, minZoom:5, maxZoom:14, zoomSnap:0.25, preferCanvas:false})
+  .fitBounds([[-1.7,40.9],[12.0,51.5]]);
+map.attributionControl.setPrefix(false).addAttribution('OCHA COD-AB · Google FloodHub · UNOSAT · WorldPop · Overture · © OpenStreetMap contributors · IOM DTM · CCCM');
+L.control.scale({imperial:false}).addTo(map);
+[['choro',350],['rasters',380],['hazard',410],['roads',420],['bounds',430],['points',450]].forEach(([n,z])=>{ map.createPane(n).style.zIndex = z; });
+map.getPane('rasters').style.pointerEvents = 'none';
+const ptsRenderer = L.canvas({pane:'points', padding:.3});
+const roadRenderer = L.canvas({pane:'roads', padding:.3});
+
+const SITE_OPACITY = .6;   // 40% transparent
+const SITE_MAX_R = 9;      // squares capped at 18 px; only the largest ~1% of sites reach it
+// IDP sites are drawn as squares so they never read as gauges (circles), whatever the colour.
+L.Canvas.include({ _updateSquare(layer){
+  if (!this._drawing || layer._empty()) return;
+  const p = layer._point, ctx = this._ctx, r = Math.max(Math.round(layer._radius), 1);
+  ctx.beginPath(); ctx.rect(p.x - r, p.y - r, r * 2, r * 2);
+  this._fillStroke(ctx, layer);
+}});
+const SquareMarker = L.CircleMarker.extend({ _updatePath(){ this._renderer._updateSquare(this); } });
+const ramp = () => ['--r0','--r1','--r2','--r3','--r4'].map(css);
+const rampColor = v => { const r = ramp(); return v<=0 ? r[0] : r[Math.min(4, 1+Math.floor(v/25))]; };
+const sevColor = s => css('--sev'+Math.max(0,s));
+
+const distLayer = L.geoJSON(dist, {pane:'choro', style: f=>({}), onEachFeature:(f,l)=>{
+  l.on('click', ()=>select(f.properties.adm2_pcode, false));
+  l.bindTooltip(()=>`<b>${f.properties.adm2_name}</b> · ${f.properties.adm1_name}<br>Index ${f.properties._idx.toFixed(0)} · rank ${f.properties._rank}`, {sticky:true});
+}}).addTo(map);
+const regLayer = L.geoJSON(regions, {pane:'bounds', interactive:false, style:()=>({color:css('--ink'), weight:1.2, opacity:.55, fill:false})}).addTo(map);
+const img = (k,op) => L.imageOverlay('data/'+k+'.png', R[k], {pane:'rasters', opacity:op, interactive:false});
+const popImg = img('pop_1km', .85), bldgImg = img('bldg_500m', .9), f23Img = img('flood_2023_200m', .9);
+const fhLayer = L.geoJSON(fhz, {pane:'hazard', style:f=>({color:css('--river'), weight:f.properties.kind==='significant'?1.5:2, dashArray:f.properties.kind==='flash'?'4 3':null, fillColor:css('--river'), fillOpacity:.18}),
+  onEachFeature:(f,l)=>l.bindTooltip(f.properties.kind==='significant'?'FloodHub significant event footprint':f.properties.kind==='flash'?'FloodHub flash-flood alert area':'FloodHub inundation map', {sticky:true})});
+const gaugeLayer = L.geoJSON(gauges, {pane:'points', pointToLayer:(f,ll)=>L.circleMarker(ll,{renderer:ptsRenderer}),
+  style:f=>{const s=SEVK[f.properties.severity]??0; return {radius:2.5+s*1.3, color:css('--panel'), weight:.8, fillColor:sevColor(s), fillOpacity:s?0.95:.6};},
+  onEachFeature:(f,l)=>{const p=f.properties; l.bindPopup(()=>gaugePopup(p), {maxWidth:360, minWidth:300, autoPanPaddingTopLeft:[20,20], autoPanPaddingBottomRight:[270,40]});}});
+gaugeLayer.on('popupopen', e=>wireHydro(e.popup.getElement()));
+const siteLayer = L.geoJSON(sites, {pane:'points', pointToLayer:(f,ll)=>new SquareMarker(ll,{renderer:ptsRenderer}), style:()=>({}),
+  onEachFeature:(f,l)=>{const p=f.properties; l.bindPopup(()=>`<b>${p.site}</b><br>${p.District}, ${p.Region}<br><span class="data">${full(p.ind)}</span> people · <span class="data">${full(p.hh)}</span> households<br>${p.near_fh?'<b>Within 1 km of forecast flood zone</b><br>':''}${p.near_2023?'Within 1 km of 2023 flood extent':''}<br><small class="data">${p.site_code}</small>`);}});
+const roadLayer = L.geoJSON(roads, {pane:'roads', style:()=>({}), onEachFeature:(f,l)=>{const p=f.properties; l.bindTooltip(()=>`${p.name||'Unnamed '+p.highway} · ${p.highway}<br>${p.km_fh>0?p.km_fh.toFixed(1)+' km in forecast zone':''}${p.km_2023>0?(p.km_fh>0?' · ':'')+p.km_2023.toFixed(1)+' km flooded in 2023':''}`,{sticky:true});}});
+roadLayer.options.renderer = roadRenderer; roadLayer.eachLayer(l=>l.options.renderer=roadRenderer);
+
+function styleAll(){
+  distLayer.setStyle(f=>({color:css('--panel'), weight: f.properties.adm2_pcode===selected?2.5:.6, opacity:1,
+    fillColor: rampColor(f.properties._idx), fillOpacity: layerOn.choro ? .85 : 0}));
+  if (selected) distLayer.eachLayer(l=>{ if(l.feature.properties.adm2_pcode===selected){ l.setStyle({color:css('--ink'), weight:2.5}); l.bringToFront(); }});
+  regLayer.setStyle({color:css('--ink')});
+  fhLayer.setStyle(f=>({color:css('--river'), weight: f.properties.kind==='significant'?2.2:2.5, fillColor:css('--river'), fillOpacity: mode==='fh'?.28:.1, opacity: mode==='fh'?1:.55}));
+  gaugeLayer.setStyle(f=>{const s=SEVK[f.properties.severity]??0; return {radius:2.5+s*1.3, color:css('--panel'), weight:.8, fillColor:sevColor(s), fillOpacity:s?0.95:.6};});
+  const flag = mode==='fh' ? 'near_fh' : 'near_2023';
+  siteLayer.setStyle(f=>({radius: Math.min(SITE_MAX_R, Math.max(2, Math.sqrt(f.properties.ind)/10.5)), color: f.properties[flag] ? css('--site') : css('--panel'), weight: f.properties[flag] ? 1.2 : .6, opacity: SITE_OPACITY,
+    fillColor: f.properties[flag] ? css('--site-risk') : css('--site'), fillOpacity: SITE_OPACITY}));
+  const key = mode==='fh' ? 'km_fh' : 'km_2023';
+  roadLayer.setStyle(f=>({color: f.properties[key]>0 ? css('--road-hit') : css('--road'), weight: f.properties[key]>0 ? 2.6 : (/trunk|primary/.test(f.properties.highway)?1.6:1), opacity: f.properties[key]>0 ? .95 : .7}));
+}
+
+// ---------- gauge hydrograph (FloodHub latest forecast, daily mean discharge)
+const fmtq = v => v===0 ? '0' : v>=100 ? Math.round(v).toLocaleString() : v>=10 ? v.toFixed(1) : v.toFixed(2);
+const dlab = dd => dd.toLocaleDateString('en-GB',{day:'numeric',month:'short',timeZone:'UTC'});
+function gaugePopup(p){
+  const s = SEVK[p.severity];
+  const head = `<div class="gp-head"><b>FloodHub gauge</b><span class="chip s${s??'n'}">${p.severity.replace('_',' ')}</span><span class="gp-meta">trend ${(p.trend||'–').toLowerCase()}</span></div>
+    <div class="gp-meta">${p.district||'Outside Somalia'} · <span class="data">${p.gauge_id}</span>${p.verified?'':' · not quality-verified'}</div>`;
+  const fc = FC[p.gauge_id];
+  return head + (fc ? hydro(fc) : '<div class="gp-meta" style="margin-top:6px">No forecast series for this gauge.</div>');
+}
+function niceMax(v){ const p = Math.pow(10, Math.floor(Math.log10(v))); const f = v/p; return (f<=1?1:f<=2?2:f<=2.5?2.5:f<=5?5:10)*p; }
+function hydro(fc){
+  const W = 300, H = 170, m = {l:40, r:70, t:12, b:24};
+  const iw = W-m.l-m.r, ih = H-m.t-m.b, n = fc.v.length;
+  const days = fc.v.map((_,i)=>new Date(Date.parse(fc.start+'T00:00:00Z') + i*864e5));
+  const peak = Math.max(...fc.v), pi = fc.v.indexOf(peak);
+  const th = [['Warning',1],['Danger',2],['Extreme',3]].map(([k,sv],i)=>({k, sv, v:fc.th[i]})).filter(t=>t.v!=null);
+  const next = th.find(t=>t.v>peak);               // always show the next threshold above the peak
+  const ymax = niceMax(Math.max(peak, next ? next.v : peak) * 1.08 || 1);
+  const x = i => m.l + (n===1 ? iw/2 : i*iw/(n-1));
+  const y = v => m.t + ih - v/ymax*ih;
+  const issued = Date.parse(fc.issued);
+  const iss = Math.max(0, days.findIndex(dd => dd.getTime() + 864e5 > issued));   // first day at or after issue
+  const pts = fc.v.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`);
+  let svg = `<svg class="hydro" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Forecast discharge, ${dlab(days[0])} to ${dlab(days[n-1])}">`;
+  [0, ymax/2, ymax].forEach(t=>{ svg += `<line class="grid" x1="${m.l}" x2="${m.l+iw}" y1="${y(t)}" y2="${y(t)}"/><text x="${m.l-6}" y="${y(t)+3.5}" text-anchor="end">${fmtq(t)}</text>`; });
+  let lastLy = -99;
+  th.filter(t=>t.v<=ymax).forEach(t=>{
+    const ly = Math.max(y(t.v)+3.5, lastLy+11); lastLy = ly;   // keep stacked labels apart
+    svg += `<line x1="${m.l}" x2="${m.l+iw}" y1="${y(t.v)}" y2="${y(t.v)}" stroke="var(--sev${t.sv})" stroke-width="1.5" stroke-dasharray="5 3"/>
+            <text class="lbl" x="${m.l+iw+6}" y="${ly}">${t.k} ${fmtq(t.v)}</text>`;
+  });
+  if (iss>0) svg += `<line class="now" x1="${x(iss)}" x2="${x(iss)}" y1="${m.t}" y2="${m.t+ih}"/><text x="${x(iss)+3}" y="${m.t+8}" style="font-size:9.5px">issued</text>`;
+  if (iss>0) svg += `<polyline class="series past" points="${pts.slice(0, iss+1).join(' ')}"/>`;
+  svg += `<polyline class="series" points="${pts.slice(iss).join(' ')}"/>`;
+  [0, iss, n-1].filter((v,i,a)=>a.indexOf(v)===i).forEach(i=>{ svg += `<text x="${x(i)}" y="${H-6}" text-anchor="${i===0?'start':i===n-1?'end':'middle'}">${dlab(days[i])}</text>`; });
+  svg += `<circle class="pt" cx="${x(pi)}" cy="${y(peak)}" r="4"/>`;
+  const step = iw/Math.max(1,n-1);
+  fc.v.forEach((v,i)=>{ svg += `<rect class="hit" data-i="${i}" x="${x(i)-step/2}" y="${m.t}" width="${step}" height="${ih}"/>`; });
+  svg += `<g class="tip" hidden><line class="now" y1="${m.t}" y2="${m.t+ih}"/><circle class="pt" r="4"/><rect rx="3" height="20"/><text></text></g></svg>`;
+  const unit = fc.unit==='CUBIC_METERS_PER_SECOND' ? 'm³/s' : fc.unit.toLowerCase();
+  const rise = fc.v[n-1] - fc.v[iss];
+  const cross = th.filter(t=>peak>=t.v).pop();
+  const note = `Peak ${fmtq(peak)} ${unit} on ${dlab(days[pi])}${cross?`, above ${cross.k.toLowerCase()} level`:next?`, ${Math.round(peak/next.v*100)}% of ${next.k.toLowerCase()} level`:''}. ${rise>=0?'Rises':'Falls'} ${fmtq(Math.abs(rise))} ${unit} from ${dlab(days[iss])} to ${dlab(days[n-1])}.`;
+  const data = JSON.stringify({v:fc.v, d:days.map(dlab), x:fc.v.map((_,i)=>x(i)), y:fc.v.map(y), u:unit, W});
+  return `<div class="gp-meta" style="margin-top:8px">Forecast river discharge (${unit}), issued ${new Date(issued).toUTCString().slice(5,22)} UTC. Dashed: days before issue.</div>`
+    + `<div data-hydro='${data}'>${svg}</div><div class="gp-meta" style="max-width:300px">${note}</div>`;
+}
+function wireHydro(root){
+  const box = root && root.querySelector('[data-hydro]'); if (!box) return;
+  const D = JSON.parse(box.dataset.hydro), tip = box.querySelector('.tip');
+  const ln = tip.querySelector('line'), c = tip.querySelector('circle'), rc = tip.querySelector('rect'), t = tip.querySelector('text');
+  box.querySelectorAll('.hit').forEach(r=>r.addEventListener('mouseenter', ()=>{
+    const i = +r.dataset.i, label = `${D.d[i]} · ${fmtq(D.v[i])} ${D.u}`;
+    tip.hidden = false;
+    ln.setAttribute('x1', D.x[i]); ln.setAttribute('x2', D.x[i]);
+    c.setAttribute('cx', D.x[i]); c.setAttribute('cy', D.y[i]);
+    t.textContent = label;
+    const w = t.getComputedTextLength() + 12, tx = Math.min(Math.max(D.x[i]-w/2, 2), D.W-w-2), ty = Math.max(D.y[i]-30, 0);
+    rc.setAttribute('x', tx); rc.setAttribute('y', ty); rc.setAttribute('width', w);
+    t.setAttribute('x', tx+6); t.setAttribute('y', ty+14);
+  }));
+  box.querySelector('svg').addEventListener('mouseleave', ()=>{ tip.hidden = true; });
+}
+
+// ---------- layers panel
+const LAYERS = [
+  {k:'choro', label:'Exposure index', sw:'--r3', on:true, lyr:null},
+  {k:'fh', label:'FloodHub zones', sw:'--river', on:true, lyr:fhLayer},
+  {k:'f23', label:'2023 flood extent', sw:'--flood23', on:false, lyr:f23Img},
+  {k:'gauges', label:'River gauges', sw:'--sev2', on:true, lyr:gaugeLayer},
+  {k:'sites', label:'IDP sites', sw:'--site', on:true, lyr:siteLayer},
+  {k:'roads', label:'Main roads', sw:'--road', on:false, lyr:roadLayer},
+  {k:'pop', label:'Population (1 km)', sw:'--pop', on:false, lyr:popImg},
+  {k:'bldg', label:'Buildings (500 m)', sw:'--bldg', on:false, lyr:bldgImg},
+];
+const layerOn = {};
+$('#layers').innerHTML = LAYERS.map(L_=>`<label class="chk"><input type="checkbox" id="ly-${L_.k}" ${L_.on?'checked':''}><span class="sw" style="background:var(${L_.sw})"></span>${L_.label}</label>`).join('');
+function setLayer(k, on){
+  const L_ = LAYERS.find(x=>x.k===k); layerOn[k] = on;
+  const cb = document.getElementById('ly-'+k); if (cb) cb.checked = on;
+  const lg = document.getElementById('lg-'+k); if (lg){ lg.checked = on; lg.closest('.lgsec').classList.toggle('off', !on); }
+  if (L_.lyr) on ? L_.lyr.addTo(map) : L_.lyr.remove();
+  if (k==='choro') styleAll();
+}
+LAYERS.forEach(L_=>{ setLayer(L_.k, L_.on); $('#ly-'+L_.k).addEventListener('change', e=>setLayer(L_.k, e.target.checked)); });
+
+// ---------- legend
+const legend = L.control({position:'bottomright'});
+legend.onAdd = () => { const el = L.DomUtil.create('div','legend'); L.DomEvent.disableClickPropagation(el); return el; };
+legend.addTo(map);
+function drawLegend(){
+  const el = document.querySelector('.legend');
+  el.innerHTML = `<h4>Exposure index · ${mode==='fh'?'live forecast':'2023 analog'}</h4>
+    <div class="ramp">${['--r0','--r1','--r2','--r3','--r4'].map(t=>`<i style="background:var(${t})"></i>`).join('')}</div>
+    <div class="ramp-l"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+    <div class="lgsec${layerOn.gauges?'':' off'}" style="display:flex;flex-direction:column;gap:6px;margin-top:4px">
+      <label class="tg"><input type="checkbox" id="lg-gauges" ${layerOn.gauges?'checked':''}><h4>River gauges</h4></label>
+      ${[3,2,1,0].map(s=>`<div class="lg"><span class="dot" style="background:var(--sev${s});opacity:${s?0.95:0.6}"></span>${SEVN[s]} <span class="data" style="margin-left:auto;color:var(--muted)">${S.gauges_by_sev[Object.keys(SEVK)[s]]||0}</span></div>`).join('')}
+    </div>
+    <div class="lgsec${layerOn.sites?'':' off'}" style="display:flex;flex-direction:column;gap:6px;margin-top:4px">
+      <label class="tg"><input type="checkbox" id="lg-sites" ${layerOn.sites?'checked':''}><h4>IDP sites (CCCM)</h4></label>
+      <div class="lg"><span class="dot sq" style="background:var(--site-risk);border-color:var(--site);opacity:${SITE_OPACITY}"></span>≤1 km of ${mode==='fh'?'forecast zone':'2023 extent'}</div>
+      <div class="lg"><span class="dot sq" style="background:var(--site);opacity:${SITE_OPACITY}"></span>Other sites</div>
+      <div class="lg" style="color:var(--muted)">Square size shows people in site; sites over 8,400 share the largest size</div>
+    </div>`;
+  el.querySelector('#lg-gauges').addEventListener('change', e=>setLayer('gauges', e.target.checked));
+  el.querySelector('#lg-sites').addEventListener('change', e=>setLayer('sites', e.target.checked));
+}
+
+// ---------- ranking table + detail
+const popKey = () => mode==='fh' ? 'pop_fh' : 'pop_2023';
+function drawTable(order){
+  $('#th-pop').textContent = mode==='fh' ? 'People in zone' : 'People 2023';
+  $('#rank tbody').innerHTML = order.map(f=>{const p=f.properties; const s=p.g_maxsev;
+    return `<tr tabindex="0" data-pc="${p.adm2_pcode}" class="${p.adm2_pcode===selected?'on':''}">
+      <td class="data">${p._rank}</td>
+      <td>${p.adm2_name}<small>${p.adm1_name}</small></td>
+      <td class="data"><span class="bar" style="width:${Math.max(2,p._idx*0.5)}px"></span>${p._idx.toFixed(0)}</td>
+      <td class="data">${fmt(p[popKey()])}</td>
+      <td>${s>=0?`<span class="chip s${s}">${['none','above','severe','extreme'][s]}</span>`:'<span class="chip sn">none</span>'}</td></tr>`;}).join('');
+}
+$('#rank tbody').addEventListener('click', e=>{ const tr = e.target.closest('tr[data-pc]'); if (tr) select(tr.dataset.pc, true); });
+$('#rank tbody').addEventListener('keydown', e=>{ if ((e.key==='Enter'||e.key===' ') && e.target.dataset.pc){ e.preventDefault(); select(e.target.dataset.pc, true); }});
+
+function drawDetail(){
+  const sec = $('#detailSec');
+  const f = F.find(x=>x.properties.adm2_pcode===selected);
+  if (!f){ sec.hidden = true; return; }
+  sec.hidden = false; const p = f.properties; const m = mode==='fh';
+  const stat = (k,v)=>`<div><dt>${k}</dt><dd>${v}</dd></div>`;
+  $('#detail').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><h3>${p.adm2_name}</h3><button class="linkbtn" id="clear">Clear</button></div>
+    <p class="sub">${p.adm1_name} · <span class="data">${p.adm2_pcode}</span> · rank ${p._rank} of ${F.length} · index <b class="data">${p._idx.toFixed(1)}</b></p>
+    <p class="sub" style="margin:0">Component scores (0–100), before weighting</p>
+    ${COMP.map(c=>`<div class="comp"><span>${c.label}</span><span class="track"><span class="fill" style="display:block;width:${(p._n[c.k]*100).toFixed(0)}%"></span></span><span class="data" style="text-align:right">${(p._n[c.k]*100).toFixed(0)}</span></div>`).join('')}
+    <dl class="stats">
+      ${stat('Population 2026', fmt(p.pop))}
+      ${stat(m?'In forecast zone':'In 2023 extent', fmt(m?p.pop_fh:p.pop_2023) + ` (${(m?p.pct_pop_fh:p.pct_pop_2023).toFixed(0)}%)`)}
+      ${stat('Buildings', fmt(p.bldg))}
+      ${stat('…in flood zone', fmt(m?p.bldg_fh:p.bldg_2023))}
+      ${stat('Road network', fmt(p.road_km)+' km')}
+      ${stat('…in flood zone', fmt(m?p.road_km_fh:p.road_km_2023)+' km')}
+      ${stat('IDPs (DTM '+S.dtm_date.slice(0,7)+')', fmt(p.idp_dtm))}
+      ${stat('…natural-hazard IDPs', fmt(p.idp_dtm_natural))}
+      ${stat('IDP sites (CCCM)', fmt(p.sites)+' · '+fmt(p.site_ind))}
+      ${stat('…≤1 km of zone', fmt(m?p.sites_fh:p.sites_2023)+' · '+fmt(m?p.site_ind_fh:p.site_ind_2023))}
+      ${stat('New arrivals Jun–Sep 26', fmt(p.ett_arrivals))}
+      ${stat('Gauges', `${p.g_total}`)}
+      ${stat('Severe / extreme', `${p.g_severe} / ${p.g_extreme}`)}
+      ${stat('Gauges rising', `${p.g_rising}`)}
+    </dl>`;
+  $('#clear').onclick = ()=>select(null);
+}
+function select(pc, zoom){
+  selected = pc;
+  styleAll(); drawDetail();
+  document.querySelectorAll('#rank tr[data-pc]').forEach(tr=>tr.classList.toggle('on', tr.dataset.pc===pc));
+  if (pc){
+    const l = distLayer.getLayers().find(l=>l.feature.properties.adm2_pcode===pc);
+    if (zoom && l) map.flyToBounds(l.getBounds(), {padding:[30,30], maxZoom:9, duration:.6});
+    $('#detailSec').scrollIntoView({block:'nearest'});
+  }
+}
+
+// ---------- mode toggle
+function setMode(m){
+  mode = m;
+  try { localStorage.setItem('som-mode', m); } catch(e){}
+  $('#m-fh').setAttribute('aria-pressed', m==='fh'); $('#m-h23').setAttribute('aria-pressed', m==='h23');
+  if (m==='h23' && !layerOn.f23){ $('#ly-f23').checked = true; setLayer('f23', true); }
+  refresh();
+}
+$('#m-fh').onclick = ()=>setMode('fh'); $('#m-h23').onclick = ()=>setMode('h23');
+
+const HOW = {
+  pop:   ['WorldPop 2026 people living in 100 m cells inside the hazard footprint.', 'log'],
+  idp:   ['People in CCCM IDP sites within about 1 km of the hazard footprint (site coordinates are approximate).', 'log'],
+  gauge: ['FloodHub gauge forecast in the district: (1 × above normal + 2 × severe + 3 × extreme) ÷ (3 × all gauges). 0 when a district has no gauges. Uses the live forecast in both scenarios.', 'lin'],
+  bldg:  ['Overture building footprints whose centre falls inside the hazard footprint.', 'log'],
+  stock: ['IDPs already in the district (IOM DTM). This measures vulnerability, so it does not depend on the hazard.', 'log'],
+};
+function drawHow(){
+  const tw = COMP.reduce((a,c)=>a+c.w,0);
+  const hz = mode==='fh' ? 'the live FloodHub forecast footprint (significant event + flash-flood alerts)' : 'the UNOSAT 2023 El Niño flood extent';
+  $('#howto').innerHTML = `
+    <h3>How the index is calculated</h3>
+    <p>Each district gets a score from 0 to 1 on five components, measured against ${hz}. The index is the weighted average of those scores, times 100:</p>
+    <div class="formula">Index = 100 × Σ (wᵢ × sᵢ) ÷ Σ wᵢ</div>
+    <p>Counts are scored on a log scale against the most-exposed district in the current scenario: <span class="data">s = ln(1 + x) ÷ ln(1 + x<sub>max</sub>)</span>. The log keeps rural districts distinguishable from Mogadishu-sized ones. The top district on a component scores 1, and a district with none scores 0.</p>
+    <table><thead><tr><th>Component</th><th style="text-align:right">Weight</th></tr></thead><tbody>
+      ${COMP.map(c=>`<tr><td>${c.label}<small>${HOW[c.k][0]}${HOW[c.k][1]==='lin'?' Scored linearly.':''}</small></td><td class="wt">${tw?Math.round(c.w/tw*100):0}%</td></tr>`).join('')}
+    </tbody></table>
+    <p class="sub">${tw ? 'Weights are the slider values as a share of their total.' : 'All weights are zero, so every district scores 0. Raise a slider to rank districts.'} Scores are rescaled for each scenario, so compare districts within a scenario, not index values across scenarios. The index ranks relative exposure. It does not predict damage or the number of people affected.</p>`;
+}
+function refresh(){ const order = computeIndex(); styleAll(); drawTable(order); drawDetail(); drawLegend(); drawHow(); }
+
+
+// ---------- methods
+$('#methods').innerHTML = `
+<p><b>Index.</b> See "How the index is calculated" under the weight sliders.</p>
+<ul>
+<li><b>Live forecast:</b> Google FloodHub API, pulled ${new Date(S.floodhub.pulled_utc).toUTCString().slice(5,22)} UTC: ${S.floodhub.n_significant} significant riverine event, ${S.floodhub.n_flash_events} flash-flood alerts and ${S.floodhub.n_gauges.toLocaleString()} gauges (including non-verified HydroBASINS gauges). The event polygon covers about ${fmt(S.haz_km2_fh)} km² inside Somalia, while FloodHub puts the flooded area at ${ev?full(ev.area_km2):'–'} km². Footprint counts are therefore upper bounds.</li>
+<li><b>2023 El Niño analog:</b> UNOSAT FL20231105SOM cumulative flood extents, 1 Nov – 3 Dec 2023 (VIIRS, Sentinel-1/2, RCM, WorldView, Pléiades, GF-2). There are ${S.unosat_layers||23} extent layers, rasterised to 100 m. Small detections fill whole pixels, which inflates the extent slightly. Areas the satellites did not image are missing.</li>
+<li><b>Population:</b> WorldPop 2026 constrained, 100 m (R2025A v1); ${fmt(S.pop_somalia)} people inside OCHA districts.</li>
+<li><b>Buildings:</b> Overture Maps ${S.overture_release}: ${fmt(S.bldg_total)} footprints inside Somalia, counted by footprint centre.</li>
+<li><b>Roads:</b> OpenStreetMap via Geofabrik, ${fmt(S.road_km)} km. Each road is sampled every 50 m against the hazard grid.</li>
+<li><b>Displacement:</b> IOM DTM district IDP figures (${S.dtm_date}, ${fmt(S.idp_dtm)} IDPs). DTM reports Banadir as one unit, so its total is split across the Mogadishu districts by population. IOM DTM Emergency Trend Tracking, ${S.ett_range[0]} to ${S.ett_range[1]}: ${fmt(S.ett_arrivals)} new arrivals, of which ${fmt(S.ett_causes['Natural Hazards']||0)} were natural-hazard driven, almost all by drought.</li>
+<li><b>IDP sites:</b> CCCM Cluster IDP Site Master List, Q4 2024: ${fmt(S.sites)} verified sites holding ${fmt(S.site_ind)} people. Site coordinates are approximate, so a site counts as exposed when it lies within about 1 km of the hazard.</li>
+<li><b>Boundaries:</b> OCHA COD-AB Somalia v03, 2025.</li>
+</ul>
+<p class="sub">Generated ${S.generated.replace('T',' ')} UTC. Re-run <span class="data">python scripts/run_all.py</span> to refresh the forecast.</p>`;
+
+setMode(mode);
+$('#loading').hidden = true;
+window.somApp = {map, gaugeLayer, siteLayer};  // handle for debugging in the console
+})().catch(err=>{ const l=document.getElementById('loading'); l.hidden=false; l.textContent='Could not load map data: '+err.message; console.error(err); });
+</script>
