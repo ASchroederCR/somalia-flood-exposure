@@ -342,8 +342,9 @@ function styleAll(){
   siteLayer.setStyle(f=>({radius: Math.min(SITE_MAX_R, Math.max(2, Math.sqrt(f.properties.ind)/10.5)), color: f.properties[flag] ? css('--site') : css('--panel'), weight: f.properties[flag] ? 1.2 : .6, opacity: SITE_OPACITY,
     fillColor: f.properties[flag] ? css('--site-risk') : css('--site'), fillOpacity: SITE_OPACITY}));
   const hflag = flag;
-  healthLayer.setStyle(f=>({radius: /Hospital|Referral/.test(f.properties.kind) ? 6 : 4.5, color: f.properties[hflag] ? css('--health') : css('--panel'), weight: f.properties[hflag] ? 1.5 : .8,
-    fillColor: f.properties[hflag] ? css('--site-risk') : css('--health'), fillOpacity: .95}));
+  // outline only: pink, or white (and heavier) when within 1 km of the hazard
+  healthLayer.setStyle(f=>({radius: /Hospital|Referral/.test(f.properties.kind) ? 6 : 4.5, fill:false,
+    color: f.properties[hflag] ? css('--site-risk') : css('--health'), weight: f.properties[hflag] ? 2.2 : 1.6, opacity: 1}));
   const key = 'km_' + SX();
   roadLayer.setStyle(f=>({color: f.properties[key]>0 ? css('--road-hit') : css('--road'), weight: f.properties[key]>0 ? 2.6 : (/trunk|primary/.test(f.properties.highway)?1.6:1), opacity: f.properties[key]>0 ? .95 : .7}));
 }
@@ -458,8 +459,8 @@ function drawLegend(){
     </div>
     <div class="lgsec${layerOn.health?'':' off'}" style="display:flex;flex-direction:column;gap:6px;margin-top:4px">
       <label class="tg"><input type="checkbox" id="lg-health" ${layerOn.health?'checked':''}><h4>Health facilities</h4></label>
-      <div class="lg"><span class="dot dia" style="background:var(--site-risk);border-color:var(--health)"></span>≤1 km of ${MD().zone}</div>
-      <div class="lg"><span class="dot dia" style="background:var(--health)"></span>Other facilities <span class="data" style="margin-left:auto;color:var(--muted)">${S.hf_total}</span></div>
+      <div class="lg"><span class="dot dia" style="background:none;border:2px solid var(--site-risk)"></span>≤1 km of ${MD().zone}</div>
+      <div class="lg"><span class="dot dia" style="background:none;border:1.5px solid var(--health)"></span>Other facilities <span class="data" style="margin-left:auto;color:var(--muted)">${S.hf_total}</span></div>
       <div class="lg" style="color:var(--muted)">Larger diamonds are hospitals and referral centres. Only ${S.hf_total} of ${S.hf_listed} listed facilities have a location.</div>
     </div>`;
   el.querySelector('#lg-health').addEventListener('change', e=>setLayer('health', e.target.checked));
