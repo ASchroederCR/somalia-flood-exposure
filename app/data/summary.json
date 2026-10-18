@@ -1,43 +1,32 @@
 {
- "generated": "2026-10-16T13:18+00:00",
+ "generated": "2026-10-18T21:58+00:00",
  "floodhub": {
-  "pulled_utc": "2026-10-16T13:16:58.817060+00:00",
+  "pulled_utc": "2026-10-18T21:57:03.083094+00:00",
   "n_flash_events": 0,
   "n_flash_polys": 0,
-  "n_significant": 1,
+  "n_significant": 0,
   "n_gauges": 1008,
   "n_inundation_maps": 0,
   "severity_counts": {
-   "NO_FLOODING": 527,
-   "ABOVE_NORMAL": 247,
-   "SEVERE": 168,
-   "EXTREME": 66
+   "NO_FLOODING": 578,
+   "ABOVE_NORMAL": 250,
+   "SEVERE": 171,
+   "EXTREME": 9
   },
-  "significant": [
-   {
-    "source": "significantEvents",
-    "start": "2026-10-12T00:00:00Z",
-    "end": null,
-    "fh_affected_pop": 166745,
-    "area_km2": 22630.71,
-    "n_gauges": 222,
-    "countries": "SO",
-    "poly_id": "EiQKIDBjNDgwNjgzMTRjYzRiN2FiNmZmNzk2MTY4ZWNjMGNiEAE"
-   }
-  ]
+  "significant": []
  },
  "pop_somalia": 19777168,
- "pop_fh": 1562788,
+ "pop_fh": 0,
  "pop_2023": 1874856,
- "haz_km2_fh": 76020,
+ "haz_km2_fh": 0,
  "haz_km2_2023": 18964,
  "bldg_total": 3025540,
- "bldg_fh": 131644,
+ "bldg_fh": 0,
  "bldg_2023": 318999,
  "road_km": 427233,
- "road_km_fh": 41463,
+ "road_km_fh": 0,
  "road_km_2023": 22817,
- "mroad_km_fh": 746,
+ "mroad_km_fh": 0,
  "mroad_km_2023": 596,
  "idp_dtm": 3262080,
  "dtm_date": "2024-09-30",
@@ -54,16 +43,16 @@
  },
  "sites": 3814,
  "site_ind": 4022641,
- "sites_fh": 135,
- "site_ind_fh": 260113,
+ "sites_fh": 0,
+ "site_ind_fh": 0,
  "sites_2023": 530,
  "site_ind_2023": 802857,
  "overture_release": "2026-09-23.1",
  "gauges_by_sev": {
-  "NO_FLOODING": 527,
-  "ABOVE_NORMAL": 247,
-  "SEVERE": 168,
-  "EXTREME": 66
+  "NO_FLOODING": 578,
+  "ABOVE_NORMAL": 250,
+  "SEVERE": 171,
+  "EXTREME": 9
  },
  "unosat_layers": 23
 }
