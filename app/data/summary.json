@@ -1,7 +1,7 @@
 {
- "generated": "2026-10-18T21:58+00:00",
+ "generated": "2026-10-18T22:41+00:00",
  "floodhub": {
-  "pulled_utc": "2026-10-18T21:57:03.083094+00:00",
+  "pulled_utc": "2026-10-18T22:04:02.314852+00:00",
   "n_flash_events": 0,
   "n_flash_polys": 0,
   "n_significant": 0,
@@ -47,6 +47,69 @@
  "site_ind_fh": 0,
  "sites_2023": 530,
  "site_ind_2023": 802857,
+ "hf_listed": 519,
+ "hf_total": 258,
+ "hf_fh": 0,
+ "hf_2023": 70,
+ "hf_by_kind": {
+  "Health Center (HC)": 115,
+  "Primary Health Unit (PHU)": 95,
+  "Mobile Clinic": 13,
+  "Hospital": 13,
+  "Referral Health Center (RHC)": 12,
+  "Other": 7,
+  "TB Center": 3
+ },
+ "pop_dv": 35106,
+ "haz_km2_dv": 2502,
+ "bldg_dv": 5477,
+ "road_km_dv": 2614,
+ "mroad_km_dv": 70,
+ "sites_dv": 0,
+ "site_ind_dv": 0,
+ "hf_dv": 2,
+ "derived": {
+  "n_flagged_gauges": 180,
+  "n_skipped_endorheic": 70,
+  "min_endo_danger_m3s": 20,
+  "n_zone_basins": 125,
+  "n_wet_basins": 124,
+  "basin_km2": 11599,
+  "rp_by_severity": {
+   "SEVERE": 10,
+   "EXTREME": 20
+  },
+  "fallback_active": true,
+  "source_gauges": "floodhub_gauges.geojson"
+ },
+ "derived_check": {
+  "day": "2026-10-16",
+  "commit": "fc700d9",
+  "derived": {
+   "n_flagged_gauges": 234,
+   "n_skipped_endorheic": 85,
+   "min_endo_danger_m3s": 20,
+   "n_zone_basins": 187,
+   "n_wet_basins": 181,
+   "basin_km2": 18043,
+   "rp_by_severity": {
+    "SEVERE": 10,
+    "EXTREME": 20
+   }
+  },
+  "fh_area_km2": 22630.71,
+  "fh_affected_pop": 166745,
+  "km2_floodhub": 75386,
+  "km2_derived": 3897,
+  "km2_overlap": 2864,
+  "iou": 0.037,
+  "share_derived_inside_floodhub": 0.735,
+  "share_floodhub_inside_derived": 0.038,
+  "pop_floodhub": 1567135,
+  "pop_derived": 82393,
+  "pop_overlap": 42967,
+  "share_floodhub_inside_candidate_basins": 0.205
+ },
  "overture_release": "2026-09-23.1",
  "gauges_by_sev": {
   "NO_FLOODING": 578,

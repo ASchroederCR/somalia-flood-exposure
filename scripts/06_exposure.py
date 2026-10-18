@@ -95,14 +95,20 @@ def load(f):
 
 
 sig, flash, inund = load("floodhub_significant.geojson"), load("floodhub_flash.geojson"), load("floodhub_inundation.geojson")
-fh = gpd.GeoDataFrame(pd.concat([g[["geometry"]].assign(kind=k) for g, k in ((sig, "significant"), (flash, "flash"), (inund, "inundation")) if len(g)],
-                                ignore_index=True), geometry="geometry", crs=4326)
+parts = [g[["geometry"]].assign(kind=k) for g, k in ((sig, "significant"), (flash, "flash"), (inund, "inundation")) if len(g)]
+# quiet days have no FloodHub polygons at all: keep an empty layer so FloodHub exposure is zero
+fh = gpd.GeoDataFrame(pd.concat(parts, ignore_index=True) if parts else pd.DataFrame({"geometry": [], "kind": []}),
+                      geometry="geometry", crs=4326)
 fh["geometry"] = fh.geometry.make_valid()
 h23 = gpd.read_file(PROC / "unosat_2023_flood_extent.gpkg", layer="raw")
-log("hazard polygons: FloodHub", len(fh), "| UNOSAT 2023", len(h23))
+# derived zone (scripts/05c_derived_zone.py): severe/extreme gauge sub-basins clipped to the JRC flood hazard map
+dvz = load("derived_zone.geojson") if (PROC / "derived_zone.geojson").exists() else gpd.GeoDataFrame(geometry=[], crs=4326)
+dv_meta = json.loads((PROC / "derived_zone_meta.json").read_text()) if (PROC / "derived_zone_meta.json").exists() else {}
+log("hazard polygons: FloodHub", len(fh), "| UNOSAT 2023", len(h23), "| derived", len(dvz))
 M_fh = rasterize(fh.geometry.values)
 M_23 = rasterize(h23.geometry.values)
-log("hazard pixels (100 m): FloodHub", int(M_fh.sum()), "| 2023", int(M_23.sum()))
+M_dv = rasterize(dvz.geometry.values, all_touched=False)  # already a 90 m cell map, so don't grow it
+log("hazard pixels (100 m): FloodHub", int(M_fh.sum()), "| 2023", int(M_23.sum()), "| derived", int(M_dv.sum()))
 
 
 def zsum(mask=None):
@@ -112,7 +118,7 @@ def zsum(mask=None):
     return np.bincount(p_d[m], weights=pv[m], minlength=N)
 
 
-D["pop"], D["pop_fh"], D["pop_2023"] = zsum(), zsum(M_fh), zsum(M_23)
+D["pop"], D["pop_fh"], D["pop_2023"], D["pop_dv"] = zsum(), zsum(M_fh), zsum(M_23), zsum(M_dv)
 
 # hazard area per district (km2), from hazard pixel centres
 def hazard_area(mask):
@@ -125,7 +131,7 @@ def hazard_area(mask):
     return np.bincount(d[d >= 0], weights=px_km2[d >= 0], minlength=N)
 
 
-D["haz_km2_fh"], D["haz_km2_2023"] = hazard_area(M_fh), hazard_area(M_23)
+D["haz_km2_fh"], D["haz_km2_2023"], D["haz_km2_dv"] = hazard_area(M_fh), hazard_area(M_23), hazard_area(M_dv)
 
 # ---------------------------------------------------------------- buildings (Overture)
 bt = pq.read_table(RAW / "overture/overture_buildings_somalia_bbox.parquet", columns=["lon", "lat"])
@@ -134,9 +140,10 @@ b_d = district_of(bx, by)
 keep = b_d >= 0
 bx, by, b_d = bx[keep], by[keep], b_d[keep]
 br, bc, bok = rc(bx, by)
-b_fh, b_23 = M_fh[br, bc] & bok, M_23[br, bc] & bok
+b_fh, b_23, b_dv = M_fh[br, bc] & bok, M_23[br, bc] & bok, M_dv[br, bc] & bok
 D["bldg"] = np.bincount(b_d, minlength=N)
 D["bldg_fh"], D["bldg_2023"] = np.bincount(b_d[b_fh], minlength=N), np.bincount(b_d[b_23], minlength=N)
+D["bldg_dv"] = np.bincount(b_d[b_dv], minlength=N)
 log("buildings in Somalia", len(bx), "| in FloodHub zone", int(b_fh.sum()), "| in 2023 extent", int(b_23.sum()))
 
 # ---------------------------------------------------------------- roads (OSM): sample every ~50 m against hazard grids
@@ -149,13 +156,13 @@ dens = shapely.segmentize(roads.geometry.values, 0.00045)
 coords, ridx = shapely.get_coordinates(dens, return_index=True)
 cr, ccol, cok = rc(coords[:, 0], coords[:, 1])
 npts = np.bincount(ridx, minlength=len(roads))
-for key, M in (("km_fh", M_fh), ("km_2023", M_23)):
+for key, M in (("km_fh", M_fh), ("km_2023", M_23), ("km_dv", M_dv)):
     hit = np.bincount(ridx, weights=(M[cr, ccol] & cok).astype(float), minlength=len(roads))
     roads[key] = roads.len_km * hit / np.maximum(npts, 1)
 MAJOR = ["motorway", "trunk", "primary", "secondary", "motorway_link", "trunk_link", "primary_link", "secondary_link"]
 roads["major"] = roads.highway.isin(MAJOR)
 rr = roads[roads.d >= 0]
-for col, src in (("road_km", "len_km"), ("road_km_fh", "km_fh"), ("road_km_2023", "km_2023")):
+for col, src in (("road_km", "len_km"), ("road_km_fh", "km_fh"), ("road_km_2023", "km_2023"), ("road_km_dv", "km_dv")):
     D[col] = by_district(rr, src)
     D["m" + col] = by_district(rr[rr.major], src)
 log("road km", round(rr.len_km.sum()), "| in FloodHub zone", round(rr.km_fh.sum()), "| in 2023 extent", round(rr.km_2023.sum()))
@@ -215,14 +222,62 @@ sr, sc, sok = rc(sx, sy)
 ring = ndimage.generate_binary_structure(2, 1)
 near_fh = ndimage.binary_dilation(M_fh, ring, iterations=10)
 near_23 = ndimage.binary_dilation(M_23, ring, iterations=10)
+near_dv = ndimage.binary_dilation(M_dv, ring, iterations=10)
 cc["in_fh"], cc["near_fh"] = M_fh[sr, sc] & sok, near_fh[sr, sc] & sok
 cc["in_2023"], cc["near_2023"] = M_23[sr, sc] & sok, near_23[sr, sc] & sok
+cc["near_dv"] = near_dv[sr, sc] & sok
 cs = cc[cc.d >= 0]
 D["sites"], D["site_ind"] = by_district(cs), by_district(cs, "ind")
 D["sites_fh"], D["site_ind_fh"] = by_district(cs[cs.near_fh]), by_district(cs[cs.near_fh], "ind")
 D["sites_2023"], D["site_ind_2023"] = by_district(cs[cs.near_2023]), by_district(cs[cs.near_2023], "ind")
+D["sites_dv"], D["site_ind_dv"] = by_district(cs[cs.near_dv]), by_district(cs[cs.near_dv], "ind")
 log("CCCM sites", len(cc), "| <=1 km of FloodHub zone:", int(cc.near_fh.sum()), "sites,", int(cc[cc.near_fh].ind.sum()), "people",
     "| <=1 km of 2023 extent:", int(cc.near_2023.sum()), "sites")
+
+# ---------------------------------------------------------------- health facilities (Somalia - Health Facilities, HDX / SoDMA portal)
+hx = pd.read_excel(RAW / "health_facilities_hdx/health-facilities.xlsx", skiprows=[1])  # row 1 holds HXL tags
+hx.columns = [c.strip() for c in hx.columns]
+hx = hx.rename(columns={"Health Facility name": "name", "Type:": "kind", "Latiitude": "lat", "Longititude": "lon"})
+for c in ("Region", "District", "name", "kind"):
+    hx[c] = hx[c].astype("string").str.strip()
+hx["kind"] = hx.kind.fillna("Unknown")
+
+
+def dms(v):
+    """Some coordinates were typed as packed degrees-minutes-seconds (20327.3 = 2°03'27.3")."""
+    v = pd.to_numeric(v, errors="coerce")
+    deg, rest = np.floor(v / 10000), v % 10000
+    return deg + np.floor(rest / 100) / 60 + (rest % 100) / 3600
+
+
+def in_som(la, lo):
+    return la.between(-2, 12.5) & lo.between(40.5, 52)
+
+
+la, lo = pd.to_numeric(hx.lat, errors="coerce"), pd.to_numeric(hx.lon, errors="coerce")
+hx["loc"] = np.where(in_som(la, lo), "as given", None)
+la2, lo2 = dms(hx.lat), dms(hx.lon)
+fix = hx["loc"].isna() & la.notna() & in_som(la2, lo2)
+la, lo = la.where(~fix, la2), lo.where(~fix, lo2)
+hx.loc[fix, "loc"] = "decoded DMS"
+hx["lat"], hx["lon"] = la, lo
+hx["d"] = -1
+okm = hx["loc"].notna()
+hx.loc[okm, "d"] = district_of(lo[okm].values, la[okm].values)
+# keep decoded points only when they land in the stated region
+reg = adm2.adm1_name.str.lower().values
+bad = (hx["loc"] == "decoded DMS") & ((hx.d < 0) | (pd.Series([reg[i] if i >= 0 else "" for i in hx.d]) != hx.Region.str.lower()))
+hx.loc[bad, ["loc", "d"]] = [None, -1]
+n_hf_listed, n_hf_decoded = len(hx), int((hx["loc"] == "decoded DMS").sum())
+hs = hx[hx["loc"].notna() & (hx.d >= 0)].reset_index(drop=True)
+hp = gpd.points_from_xy(hs.lon, hs.lat)
+hr_, hc_, hok = rc(hs.lon.values, hs.lat.values)
+# coordinates are field-reported and often rounded, so "exposed" = within ~1 km, as for IDP sites
+hs["near_fh"], hs["near_2023"], hs["near_dv"] = near_fh[hr_, hc_] & hok, near_23[hr_, hc_] & hok, near_dv[hr_, hc_] & hok
+D["hf"], D["hf_fh"], D["hf_2023"] = by_district(hs), by_district(hs[hs.near_fh]), by_district(hs[hs.near_2023])
+D["hf_dv"] = by_district(hs[hs.near_dv])
+log("health facilities listed", n_hf_listed, "| located", len(hs), f"({n_hf_decoded} from decoded DMS)",
+    "| <=1 km of FloodHub zone", int(hs.near_fh.sum()), "| <=1 km of 2023 extent", int(hs.near_2023.sum()))
 
 # ---------------------------------------------------------------- gauges
 g = gpd.read_file(PROC / "floodhub_gauges.geojson")
@@ -237,6 +292,7 @@ D["g_rising"] = by_district(gg[gg.trend == "RISE"])
 # ---------------------------------------------------------------- derived
 D["pct_pop_fh"] = np.where(D["pop"] > 0, D.pop_fh / D["pop"].clip(lower=1) * 100, 0)
 D["pct_pop_2023"] = np.where(D["pop"] > 0, D.pop_2023 / D["pop"].clip(lower=1) * 100, 0)
+D["pct_pop_dv"] = np.where(D["pop"] > 0, D.pop_dv / D["pop"].clip(lower=1) * 100, 0)
 D["gauge_score"] = np.where(D.g_total > 0, (D.g_above + 2 * D.g_severe + 3 * D.g_extreme) / (3 * D.g_total.clip(lower=1)) * 100, 0)
 D = D.reset_index()
 num = D.select_dtypes("number").columns
@@ -255,6 +311,13 @@ summary = dict(
     ett_causes=ett_causes,
     sites=int(len(cc)), site_ind=round(cc.ind.sum()), sites_fh=int(cc.near_fh.sum()), site_ind_fh=round(cc[cc.near_fh].ind.sum()),
     sites_2023=int(cc.near_2023.sum()), site_ind_2023=round(cc[cc.near_2023].ind.sum()),
+    hf_listed=n_hf_listed, hf_total=int(len(hs)), hf_fh=int(hs.near_fh.sum()), hf_2023=int(hs.near_2023.sum()),
+    hf_by_kind=hs.kind.value_counts().to_dict(),
+    pop_dv=round(D.pop_dv.sum()), haz_km2_dv=round(D.haz_km2_dv.sum()), bldg_dv=int(b_dv.sum()),
+    road_km_dv=round(rr.km_dv.sum()), mroad_km_dv=round(rr[rr.major].km_dv.sum()),
+    sites_dv=int(cc.near_dv.sum()), site_ind_dv=round(cc[cc.near_dv].ind.sum()), hf_dv=int(hs.near_dv.sum()),
+    derived=dv_meta,
+    derived_check=json.loads(max(PROC.glob("compare_*.json")).read_text()) if list(PROC.glob("compare_*.json")) else None,
     overture_release=(RAW / "overture/release.txt").read_text().strip(),
     gauges_by_sev=g.severity.value_counts().to_dict(),
     unosat_layers=int(h23.layer.nunique()),
@@ -277,15 +340,18 @@ def write(gdf, name, tol=None, prec=5):
 write(adm2[["adm2_pcode", "geometry"]].merge(D, on="adm2_pcode"), "districts", tol=0.003, prec=4)
 write(adm1, "regions", tol=0.005, prec=4)
 write(fh, "floodhub_zones", tol=0.002, prec=4)
+write(dvz.dissolve("severity", as_index=False)[["severity", "rp", "geometry"]] if len(dvz) else dvz, "derived_zones", tol=0.0006, prec=4)
 gout = g[["gauge_id", "severity", "trend", "verified", "fc_start", "issued", "geometry"]].copy()
 gout[["fc_start", "issued"]] = gout[["fc_start", "issued"]].astype(str)
 gout["district"] = [adm2.adm2_name.iat[i] if i >= 0 else None for i in g.d]
 write(gout, "gauges")
-write(gpd.GeoDataFrame(cc[["site_code", "site", "Region", "District", "ind", "hh", "in_fh", "near_fh", "in_2023", "near_2023"]],
+write(gpd.GeoDataFrame(cc[["site_code", "site", "Region", "District", "ind", "hh", "in_fh", "near_fh", "in_2023", "near_2023", "near_dv"]],
                        geometry=gpd.points_from_xy(sx, sy), crs=4326), "idp_sites")
-mr = roads[roads.major | ((roads.km_fh > 0) & roads.highway.isin(["tertiary", "tertiary_link"]))]
-mr = mr[["name", "highway", "surface", "len_km", "km_fh", "km_2023", "geometry"]].copy()
-mr[["len_km", "km_fh", "km_2023"]] = mr[["len_km", "km_fh", "km_2023"]].round(2)
+hout = hs[["name", "kind", "Region", "District", "loc", "near_fh", "near_2023", "near_dv"]].copy()
+write(gpd.GeoDataFrame(hout, geometry=hp, crs=4326), "health_sites")
+mr = roads[roads.major | (((roads.km_fh > 0) | (roads.km_dv > 0)) & roads.highway.isin(["tertiary", "tertiary_link"]))]
+mr = mr[["name", "highway", "surface", "len_km", "km_fh", "km_2023", "km_dv", "geometry"]].copy()
+mr[["len_km", "km_fh", "km_2023", "km_dv"]] = mr[["len_km", "km_fh", "km_2023", "km_dv"]].round(2)
 write(mr, "roads_major", tol=0.0005, prec=4)
 (APP / "summary.json").write_text(json.dumps(summary, indent=1, default=str))
 (APP / "gauge_forecasts.json").write_text((PROC / "floodhub_gauge_forecasts.json").read_text())

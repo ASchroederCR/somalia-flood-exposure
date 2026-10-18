@@ -6,16 +6,17 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
 <style>
 /* Layout: one-screen operations console on black. Left rail = summary → controls → ranked districts; right = map drawn only from our own layers (no basemap).
-   Colour roles (validated for colour-blind separation on #000): water = cyan (FloodHub) / royal blue (2023 extent);
-   gauges = one orange ramp (circles); IDP sites = violet / white when at risk (squares); exposure index = neutral grey ramp, so no hue is shared with the hazards. */
+   Colour roles (validated for colour-blind separation on #000): water = cyan (FloodHub) / royal blue (2023 extent) / mint (derived zone);
+   gauges = one orange ramp (circles); IDP sites = violet / white when at risk (squares); health facilities = pink / white when at risk (diamonds);
+   exposure index = neutral grey ramp, so no hue is shared with the hazards. */
 :root{
   color-scheme:dark;
   --ground:#000000; --panel:#0b0b0b; --ink:#ececec; --muted:#9a9a9a; --line:#262626;
   --sea:#000000; --accent:#f0f0f0;
-  --river:#0fa5c0; --flood23:#2a50d6;
+  --river:#0fa5c0; --flood23:#2a50d6; --derived:#39d98a;
   --sev0:#6b6b6b; --sev1:#f5a05a; --sev2:#e25a14; --sev3:#a8320a;
   --r0:#1c1c1c; --r1:#454545; --r2:#6e6e6e; --r3:#9e9e9e; --r4:#dcdcdc;
-  --site:#a275f2; --site-risk:#ffffff; --road:#6e6e6e; --road-hit:#e3c91c; --pop:#4caf50; --bldg:#e3c91c;
+  --site:#a275f2; --site-risk:#ffffff; --road:#6e6e6e; --road-hit:#e3c91c; --pop:#4caf50; --bldg:#e3c91c; --health:#ff5c9d;
   --f-display:"Roboto",system-ui,-apple-system,"Segoe UI",sans-serif;
   --f-body:"Roboto",system-ui,-apple-system,"Segoe UI",sans-serif;
   --f-data:"Roboto",system-ui,-apple-system,"Segoe UI",sans-serif;
@@ -69,7 +70,7 @@ table{border-collapse:collapse;width:100%}
 .cmp th:first-child,.cmp td:first-child{text-align:left;font-weight:400;color:var(--muted)}
 .cmp thead th{font:600 11px var(--f-data);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
 .cmp td.data{font-size:13px}
-.seg{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:5px;overflow:hidden}
+.seg{display:grid;grid-template-columns:1fr 1fr 1fr;border:1px solid var(--line);border-radius:5px;overflow:hidden}
 .seg button{all:unset;cursor:pointer;text-align:center;padding:8px 6px;font:600 13px var(--f-body);color:var(--muted)}
 .seg button[aria-pressed="true"]{background:var(--accent);color:var(--panel)}
 .seg button:focus-visible,.chk input:focus-visible,input[type=range]:focus-visible,tr[tabindex]:focus-visible,.linkbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -110,6 +111,7 @@ table{border-collapse:collapse;width:100%}
 .lg{display:flex;align-items:center;gap:6px}
 .dot{width:10px;height:10px;border-radius:50%;flex:none;border:1px solid var(--panel)}
 .dot.sq{border-radius:1px}
+.dot.dia{border-radius:1px;transform:rotate(45deg) scale(.85)}
 .howto{display:flex;flex-direction:column;gap:8px;font-size:13px;padding:12px;border:1px solid var(--line);border-radius:5px;background:var(--ground)}
 .howto h3{margin:0;font:500 13px var(--f-display);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
 .howto p{margin:0;max-width:65ch}
@@ -161,7 +163,7 @@ details summary{cursor:pointer;font:600 15px var(--f-display);text-transform:upp
 
     <section>
       <h2>Exposure snapshot</h2>
-      <table class="cmp" id="cmp"><thead><tr><th></th><th>Live forecast</th><th>2023 analog</th></tr></thead><tbody></tbody></table>
+      <table class="cmp" id="cmp"><thead><tr><th></th><th>Live forecast</th><th>Derived</th><th>2023 analog</th></tr></thead><tbody></tbody></table>
       <p class="sub">Forecast counts use FloodHub's event footprint, a broad outline around the expected flooding, so read them as an upper bound.</p>
     </section>
 
@@ -169,6 +171,7 @@ details summary{cursor:pointer;font:600 15px var(--f-display);text-transform:upp
       <h2>Hazard scenario</h2>
       <div class="seg" role="group" aria-label="Hazard scenario">
         <button id="m-fh" aria-pressed="true">Live FloodHub forecast</button>
+        <button id="m-dv" aria-pressed="false">Derived (gauges + JRC)</button>
         <button id="m-h23" aria-pressed="false">2023 El Niño floods</button>
       </div>
       <h2 style="margin-top:6px">Index weights</h2>
@@ -209,8 +212,15 @@ const SEVN = ['No flooding','Above normal','Severe','Extreme'];
 const SEVK = {NO_FLOODING:0,ABOVE_NORMAL:1,SEVERE:2,EXTREME:3};
 
 const get = f => fetch('data/'+f).then(r=>{ if(!r.ok) throw new Error(f+' '+r.status); return f.endsWith('.json')||f.endsWith('.geojson') ? r.json() : r; });
-const [S, R, dist, regions, fhz, gauges, sites, roads, FC] = await Promise.all(
-  ['summary.json','rasters.json','districts.geojson','regions.geojson','floodhub_zones.geojson','gauges.geojson','idp_sites.geojson','roads_major.geojson','gauge_forecasts.json'].map(get));
+const [S, R, dist, regions, fhz, gauges, sites, roads, FC, health, dvz] = await Promise.all(
+  ['summary.json','rasters.json','districts.geojson','regions.geojson','floodhub_zones.geojson','gauges.geojson','idp_sites.geojson','roads_major.geojson','gauge_forecasts.json','health_sites.geojson','derived_zones.geojson'].map(get));
+// Scenario suffixes on the data fields (pop_fh, pop_dv, pop_2023, near_fh, …) and their labels.
+const MODES = {
+  fh:  {sfx:'fh',   zone:'forecast zone', name:'live forecast', people:'People in zone'},
+  dv:  {sfx:'dv',   zone:'derived zone',  name:'derived zone',  people:'People in derived'},
+  h23: {sfx:'2023', zone:'2023 extent',   name:'2023 analog',   people:'People 2023'},
+};
+const DV = S.derived || {};
 
 // ---------- header + snapshot
 const ev = (S.floodhub.significant||[])[0];
@@ -221,28 +231,27 @@ $('#event').innerHTML = ev ? `
   <b>${full(ev.fh_affected_pop)}</b><span>people affected (FloodHub estimate)</span>
   <b>${full(ev.area_km2)}</b><span>km² flooded area · ${ev.n_gauges} gauges in event</span>
   <b>${(S.gauges_by_sev.SEVERE||0)+(S.gauges_by_sev.EXTREME||0)}</b><span>of ${S.floodhub.n_gauges.toLocaleString()} Somali gauges forecast severe or extreme</span>`
-  : `<span class="head">No significant FloodHub event active</span><span style="grid-column:1/-1">${S.floodhub.n_flash_events} flash-flood alerts · ${S.floodhub.n_gauges} gauges</span>`;
+  : `<span class="head">No significant FloodHub event published</span>
+  <b>${(S.gauges_by_sev.SEVERE||0)+(S.gauges_by_sev.EXTREME||0)}</b><span>of ${S.floodhub.n_gauges.toLocaleString()} Somali gauges still forecast severe or extreme · ${S.floodhub.n_flash_events} flash-flood alerts</span>
+  <b>${full(S.pop_dv||0)}</b><span>people in the derived flood zone (${fmt(S.haz_km2_dv||0)} km²), built from those gauges. See the Derived scenario.</span>`;
 const rows = [
-  ['People in flood zone', S.pop_fh, S.pop_2023],
-  ['Buildings (Overture)', S.bldg_fh, S.bldg_2023],
-  ['Roads, all (km)', S.road_km_fh, S.road_km_2023],
-  ['Trunk–secondary roads (km)', S.mroad_km_fh, S.mroad_km_2023],
-  ['IDP sites ≤1 km', S.sites_fh, S.sites_2023],
-  ['People in those sites', S.site_ind_fh, S.site_ind_2023],
-  ['Hazard area in Somalia (km²)', S.haz_km2_fh, S.haz_km2_2023],
+  ['People in flood zone', 'pop'], ['Buildings (Overture)', 'bldg'], ['Roads, all (km)', 'road_km'], ['Trunk–secondary roads (km)', 'mroad_km'],
+  ['IDP sites ≤1 km', 'sites'], ['People in those sites', 'site_ind'], ['Health facilities ≤1 km', 'hf'], ['Hazard area in Somalia (km²)', 'haz_km2'],
 ];
-$('#cmp tbody').innerHTML = rows.map(r=>`<tr><td>${r[0]}</td><td class="data">${fmt(r[1])}</td><td class="data">${fmt(r[2])}</td></tr>`).join('');
+$('#cmp tbody').innerHTML = rows.map(([l,k])=>`<tr><td>${l}</td>${['fh','dv','2023'].map(s=>`<td class="data">${fmt(S[k+'_'+s])}</td>`).join('')}</tr>`).join('');
 
 // ---------- index model
 const COMP = [
-  {k:'pop',   label:'People in flood zone',     fh:'pop_fh',      h23:'pop_2023',      w:35},
-  {k:'idp',   label:'IDPs in sites ≤1 km',      fh:'site_ind_fh', h23:'site_ind_2023', w:20},
-  {k:'gauge', label:'Gauge forecast severity',  fh:'gauge_score', h23:'gauge_score',   w:20, linear:true},
-  {k:'bldg',  label:'Buildings in flood zone',  fh:'bldg_fh',     h23:'bldg_2023',     w:15},
-  {k:'stock', label:'IDP caseload (IOM DTM)',   fh:'idp_dtm',     h23:'idp_dtm',       w:10},
+  {k:'pop',   label:'People in flood zone',     fh:'pop_fh',      dv:'pop_dv',      h23:'pop_2023',      w:35},
+  {k:'idp',   label:'IDPs in sites ≤1 km',      fh:'site_ind_fh', dv:'site_ind_dv', h23:'site_ind_2023', w:20},
+  {k:'gauge', label:'Gauge forecast severity',  fh:'gauge_score', dv:'gauge_score', h23:'gauge_score',   w:20, linear:true},
+  {k:'bldg',  label:'Buildings in flood zone',  fh:'bldg_fh',     dv:'bldg_dv',     h23:'bldg_2023',     w:15},
+  {k:'stock', label:'IDP caseload (IOM DTM)',   fh:'idp_dtm',     dv:'idp_dtm',     h23:'idp_dtm',       w:10},
 ];
-let mode = 'fh', selected = null;
-try { const m = localStorage.getItem('som-mode'); if (m==='fh'||m==='h23') mode = m; } catch(e){}
+// With no FloodHub event the live scenario is all zeros, so open on the derived zone instead.
+let mode = DV.fallback_active ? 'dv' : 'fh', selected = null;
+try { const m = localStorage.getItem('som-mode'); if (m in MODES && !(m==='fh' && DV.fallback_active)) mode = m; } catch(e){}
+const MD = () => MODES[mode], SX = () => MODES[mode].sfx;
 const F = dist.features;
 function computeIndex(){
   const tw = COMP.reduce((a,c)=>a+c.w,0) || 1;
@@ -287,6 +296,14 @@ L.Canvas.include({ _updateSquare(layer){
   this._fillStroke(ctx, layer);
 }});
 const SquareMarker = L.CircleMarker.extend({ _updatePath(){ this._renderer._updateSquare(this); } });
+// Health facilities are diamonds, the third point shape.
+L.Canvas.include({ _updateDiamond(layer){
+  if (!this._drawing || layer._empty()) return;
+  const p = layer._point, ctx = this._ctx, r = Math.max(Math.round(layer._radius), 1);
+  ctx.beginPath(); ctx.moveTo(p.x, p.y - r); ctx.lineTo(p.x + r, p.y); ctx.lineTo(p.x, p.y + r); ctx.lineTo(p.x - r, p.y); ctx.closePath();
+  this._fillStroke(ctx, layer);
+}});
+const DiamondMarker = L.CircleMarker.extend({ _updatePath(){ this._renderer._updateDiamond(this); } });
 const ramp = () => ['--r0','--r1','--r2','--r3','--r4'].map(css);
 const rampColor = v => { const r = ramp(); return v<=0 ? r[0] : r[Math.min(4, 1+Math.floor(v/25))]; };
 const sevColor = s => css('--sev'+Math.max(0,s));
@@ -300,13 +317,17 @@ const img = (k,op) => L.imageOverlay('data/'+k+'.png', R[k], {pane:'rasters', op
 const popImg = img('pop_1km', .85), bldgImg = img('bldg_500m', .9), f23Img = img('flood_2023_200m', .9);
 const fhLayer = L.geoJSON(fhz, {pane:'hazard', style:f=>({color:css('--river'), weight:f.properties.kind==='significant'?1.5:2, dashArray:f.properties.kind==='flash'?'4 3':null, fillColor:css('--river'), fillOpacity:.18}),
   onEachFeature:(f,l)=>l.bindTooltip(f.properties.kind==='significant'?'FloodHub significant event footprint':f.properties.kind==='flash'?'FloodHub flash-flood alert area':'FloodHub inundation map', {sticky:true})});
+const dvLayer = L.geoJSON(dvz, {pane:'hazard', style:()=>({}),
+  onEachFeature:(f,l)=>l.bindTooltip(`Derived flood zone · ${f.properties.severity.toLowerCase()} gauges · JRC ${f.properties.rp}-year flood extent<br><small>Not a FloodHub product</small>`, {sticky:true})});
 const gaugeLayer = L.geoJSON(gauges, {pane:'points', pointToLayer:(f,ll)=>L.circleMarker(ll,{renderer:ptsRenderer}),
   style:f=>{const s=SEVK[f.properties.severity]??0; return {radius:2.5+s*1.3, color:css('--panel'), weight:.8, fillColor:sevColor(s), fillOpacity:s?0.95:.6};},
   onEachFeature:(f,l)=>{const p=f.properties; l.bindPopup(()=>gaugePopup(p), {maxWidth:360, minWidth:300, autoPanPaddingTopLeft:[20,20], autoPanPaddingBottomRight:[270,40]});}});
 gaugeLayer.on('popupopen', e=>wireHydro(e.popup.getElement()));
 const siteLayer = L.geoJSON(sites, {pane:'points', pointToLayer:(f,ll)=>new SquareMarker(ll,{renderer:ptsRenderer}), style:()=>({}),
-  onEachFeature:(f,l)=>{const p=f.properties; l.bindPopup(()=>`<b>${p.site}</b><br>${p.District}, ${p.Region}<br><span class="data">${full(p.ind)}</span> people · <span class="data">${full(p.hh)}</span> households<br>${p.near_fh?'<b>Within 1 km of forecast flood zone</b><br>':''}${p.near_2023?'Within 1 km of 2023 flood extent':''}<br><small class="data">${p.site_code}</small>`);}});
-const roadLayer = L.geoJSON(roads, {pane:'roads', style:()=>({}), onEachFeature:(f,l)=>{const p=f.properties; l.bindTooltip(()=>`${p.name||'Unnamed '+p.highway} · ${p.highway}<br>${p.km_fh>0?p.km_fh.toFixed(1)+' km in forecast zone':''}${p.km_2023>0?(p.km_fh>0?' · ':'')+p.km_2023.toFixed(1)+' km flooded in 2023':''}`,{sticky:true});}});
+  onEachFeature:(f,l)=>{const p=f.properties; l.bindPopup(()=>`<b>${p.site}</b><br>${p.District}, ${p.Region}<br><span class="data">${full(p.ind)}</span> people · <span class="data">${full(p.hh)}</span> households<br>${p.near_fh?'<b>Within 1 km of forecast flood zone</b><br>':''}${p.near_dv?'Within 1 km of derived flood zone<br>':''}${p.near_2023?'Within 1 km of 2023 flood extent':''}<br><small class="data">${p.site_code}</small>`);}});
+const healthLayer = L.geoJSON(health, {pane:'points', pointToLayer:(f,ll)=>new DiamondMarker(ll,{renderer:ptsRenderer}), style:()=>({}),
+  onEachFeature:(f,l)=>{const p=f.properties; l.bindPopup(()=>`<b>${p.name||'Unnamed facility'}</b><br>${p.kind}<br>${p.District}, ${p.Region}<br>${p.near_fh?'<b>Within 1 km of forecast flood zone</b><br>':''}${p.near_dv?'Within 1 km of derived flood zone<br>':''}${p.near_2023?'Within 1 km of 2023 flood extent<br>':''}<small>Location ${p.loc==='decoded DMS'?'decoded from degrees-minutes-seconds':'as reported'}</small>`);}});
+const roadLayer = L.geoJSON(roads, {pane:'roads', style:()=>({}), onEachFeature:(f,l)=>{const p=f.properties; l.bindTooltip(()=>`${p.name||'Unnamed '+p.highway} · ${p.highway}<br>${p.km_fh>0?p.km_fh.toFixed(1)+' km in forecast zone':''}${p.km_dv>0?(p.km_fh>0?' · ':'')+p.km_dv.toFixed(1)+' km in derived zone':''}${p.km_2023>0?(p.km_fh>0||p.km_dv>0?' · ':'')+p.km_2023.toFixed(1)+' km flooded in 2023':''}`,{sticky:true});}});
 roadLayer.options.renderer = roadRenderer; roadLayer.eachLayer(l=>l.options.renderer=roadRenderer);
 
 function styleAll(){
@@ -315,11 +336,15 @@ function styleAll(){
   if (selected) distLayer.eachLayer(l=>{ if(l.feature.properties.adm2_pcode===selected){ l.setStyle({color:css('--ink'), weight:2.5}); l.bringToFront(); }});
   regLayer.setStyle({color:css('--ink')});
   fhLayer.setStyle(f=>({color:css('--river'), weight: f.properties.kind==='significant'?2.2:2.5, fillColor:css('--river'), fillOpacity: mode==='fh'?.28:.1, opacity: mode==='fh'?1:.55}));
+  dvLayer.setStyle(f=>({color:css('--derived'), weight: mode==='dv'?1:.6, fillColor:css('--derived'), fillOpacity: mode==='dv'?(f.properties.severity==='EXTREME'?.75:.5):.2, opacity: mode==='dv'?1:.5}));
   gaugeLayer.setStyle(f=>{const s=SEVK[f.properties.severity]??0; return {radius:2.5+s*1.3, color:css('--panel'), weight:.8, fillColor:sevColor(s), fillOpacity:s?0.95:.6};});
-  const flag = mode==='fh' ? 'near_fh' : 'near_2023';
+  const flag = 'near_' + SX();
   siteLayer.setStyle(f=>({radius: Math.min(SITE_MAX_R, Math.max(2, Math.sqrt(f.properties.ind)/10.5)), color: f.properties[flag] ? css('--site') : css('--panel'), weight: f.properties[flag] ? 1.2 : .6, opacity: SITE_OPACITY,
     fillColor: f.properties[flag] ? css('--site-risk') : css('--site'), fillOpacity: SITE_OPACITY}));
-  const key = mode==='fh' ? 'km_fh' : 'km_2023';
+  const hflag = flag;
+  healthLayer.setStyle(f=>({radius: /Hospital|Referral/.test(f.properties.kind) ? 6 : 4.5, color: f.properties[hflag] ? css('--health') : css('--panel'), weight: f.properties[hflag] ? 1.5 : .8,
+    fillColor: f.properties[hflag] ? css('--site-risk') : css('--health'), fillOpacity: .95}));
+  const key = 'km_' + SX();
   roadLayer.setStyle(f=>({color: f.properties[key]>0 ? css('--road-hit') : css('--road'), weight: f.properties[key]>0 ? 2.6 : (/trunk|primary/.test(f.properties.highway)?1.6:1), opacity: f.properties[key]>0 ? .95 : .7}));
 }
 
@@ -392,9 +417,11 @@ function wireHydro(root){
 const LAYERS = [
   {k:'choro', label:'Exposure index', sw:'--r3', on:true, lyr:null},
   {k:'fh', label:'FloodHub zones', sw:'--river', on:true, lyr:fhLayer},
+  {k:'dv', label:'Derived flood zone', sw:'--derived', on:true, lyr:dvLayer},
   {k:'f23', label:'2023 flood extent', sw:'--flood23', on:false, lyr:f23Img},
   {k:'gauges', label:'River gauges', sw:'--sev2', on:true, lyr:gaugeLayer},
   {k:'sites', label:'IDP sites', sw:'--site', on:true, lyr:siteLayer},
+  {k:'health', label:'Health facilities', sw:'--health', on:true, lyr:healthLayer},
   {k:'roads', label:'Main roads', sw:'--road', on:false, lyr:roadLayer},
   {k:'pop', label:'Population (1 km)', sw:'--pop', on:false, lyr:popImg},
   {k:'bldg', label:'Buildings (500 m)', sw:'--bldg', on:false, lyr:bldgImg},
@@ -416,7 +443,7 @@ legend.onAdd = () => { const el = L.DomUtil.create('div','legend'); L.DomEvent.d
 legend.addTo(map);
 function drawLegend(){
   const el = document.querySelector('.legend');
-  el.innerHTML = `<h4>Exposure index · ${mode==='fh'?'live forecast':'2023 analog'}</h4>
+  el.innerHTML = `<h4>Exposure index · ${MD().name}</h4>
     <div class="ramp">${['--r0','--r1','--r2','--r3','--r4'].map(t=>`<i style="background:var(${t})"></i>`).join('')}</div>
     <div class="ramp-l"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
     <div class="lgsec${layerOn.gauges?'':' off'}" style="display:flex;flex-direction:column;gap:6px;margin-top:4px">
@@ -425,18 +452,25 @@ function drawLegend(){
     </div>
     <div class="lgsec${layerOn.sites?'':' off'}" style="display:flex;flex-direction:column;gap:6px;margin-top:4px">
       <label class="tg"><input type="checkbox" id="lg-sites" ${layerOn.sites?'checked':''}><h4>IDP sites (CCCM)</h4></label>
-      <div class="lg"><span class="dot sq" style="background:var(--site-risk);border-color:var(--site);opacity:${SITE_OPACITY}"></span>≤1 km of ${mode==='fh'?'forecast zone':'2023 extent'}</div>
+      <div class="lg"><span class="dot sq" style="background:var(--site-risk);border-color:var(--site);opacity:${SITE_OPACITY}"></span>≤1 km of ${MD().zone}</div>
       <div class="lg"><span class="dot sq" style="background:var(--site);opacity:${SITE_OPACITY}"></span>Other sites</div>
       <div class="lg" style="color:var(--muted)">Square size shows people in site; sites over 8,400 share the largest size</div>
+    </div>
+    <div class="lgsec${layerOn.health?'':' off'}" style="display:flex;flex-direction:column;gap:6px;margin-top:4px">
+      <label class="tg"><input type="checkbox" id="lg-health" ${layerOn.health?'checked':''}><h4>Health facilities</h4></label>
+      <div class="lg"><span class="dot dia" style="background:var(--site-risk);border-color:var(--health)"></span>≤1 km of ${MD().zone}</div>
+      <div class="lg"><span class="dot dia" style="background:var(--health)"></span>Other facilities <span class="data" style="margin-left:auto;color:var(--muted)">${S.hf_total}</span></div>
+      <div class="lg" style="color:var(--muted)">Larger diamonds are hospitals and referral centres. Only ${S.hf_total} of ${S.hf_listed} listed facilities have a location.</div>
     </div>`;
+  el.querySelector('#lg-health').addEventListener('change', e=>setLayer('health', e.target.checked));
   el.querySelector('#lg-gauges').addEventListener('change', e=>setLayer('gauges', e.target.checked));
   el.querySelector('#lg-sites').addEventListener('change', e=>setLayer('sites', e.target.checked));
 }
 
 // ---------- ranking table + detail
-const popKey = () => mode==='fh' ? 'pop_fh' : 'pop_2023';
+const popKey = () => 'pop_' + SX();
 function drawTable(order){
-  $('#th-pop').textContent = mode==='fh' ? 'People in zone' : 'People 2023';
+  $('#th-pop').textContent = MD().people;
   $('#rank tbody').innerHTML = order.map(f=>{const p=f.properties; const s=p.g_maxsev;
     return `<tr tabindex="0" data-pc="${p.adm2_pcode}" class="${p.adm2_pcode===selected?'on':''}">
       <td class="data">${p._rank}</td>
@@ -452,7 +486,7 @@ function drawDetail(){
   const sec = $('#detailSec');
   const f = F.find(x=>x.properties.adm2_pcode===selected);
   if (!f){ sec.hidden = true; return; }
-  sec.hidden = false; const p = f.properties; const m = mode==='fh';
+  sec.hidden = false; const p = f.properties; const x = k => p[k + '_' + SX()];
   const stat = (k,v)=>`<div><dt>${k}</dt><dd>${v}</dd></div>`;
   $('#detail').innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><h3>${p.adm2_name}</h3><button class="linkbtn" id="clear">Clear</button></div>
@@ -461,16 +495,17 @@ function drawDetail(){
     ${COMP.map(c=>`<div class="comp"><span>${c.label}</span><span class="track"><span class="fill" style="display:block;width:${(p._n[c.k]*100).toFixed(0)}%"></span></span><span class="data" style="text-align:right">${(p._n[c.k]*100).toFixed(0)}</span></div>`).join('')}
     <dl class="stats">
       ${stat('Population 2026', fmt(p.pop))}
-      ${stat(m?'In forecast zone':'In 2023 extent', fmt(m?p.pop_fh:p.pop_2023) + ` (${(m?p.pct_pop_fh:p.pct_pop_2023).toFixed(0)}%)`)}
+      ${stat('In ' + MD().zone, fmt(x('pop')) + ` (${(x('pct_pop')||0).toFixed(0)}%)`)}
       ${stat('Buildings', fmt(p.bldg))}
-      ${stat('…in flood zone', fmt(m?p.bldg_fh:p.bldg_2023))}
+      ${stat('…in flood zone', fmt(x('bldg')))}
       ${stat('Road network', fmt(p.road_km)+' km')}
-      ${stat('…in flood zone', fmt(m?p.road_km_fh:p.road_km_2023)+' km')}
+      ${stat('…in flood zone', fmt(x('road_km'))+' km')}
       ${stat('IDPs (DTM '+S.dtm_date.slice(0,7)+')', fmt(p.idp_dtm))}
       ${stat('…natural-hazard IDPs', fmt(p.idp_dtm_natural))}
       ${stat('IDP sites (CCCM)', fmt(p.sites)+' · '+fmt(p.site_ind))}
-      ${stat('…≤1 km of zone', fmt(m?p.sites_fh:p.sites_2023)+' · '+fmt(m?p.site_ind_fh:p.site_ind_2023))}
+      ${stat('…≤1 km of zone', fmt(x('sites'))+' · '+fmt(x('site_ind')))}
       ${stat('New arrivals Jun–Sep 26', fmt(p.ett_arrivals))}
+      ${stat('Health facilities', `${p.hf} · ${x('hf')} ≤1 km`)}
       ${stat('Gauges', `${p.g_total}`)}
       ${stat('Severe / extreme', `${p.g_severe} / ${p.g_extreme}`)}
       ${stat('Gauges rising', `${p.g_rising}`)}
@@ -492,22 +527,24 @@ function select(pc, zoom){
 function setMode(m){
   mode = m;
   try { localStorage.setItem('som-mode', m); } catch(e){}
-  $('#m-fh').setAttribute('aria-pressed', m==='fh'); $('#m-h23').setAttribute('aria-pressed', m==='h23');
+  Object.keys(MODES).forEach(k=>$('#m-'+k).setAttribute('aria-pressed', m===k));
   if (m==='h23' && !layerOn.f23){ $('#ly-f23').checked = true; setLayer('f23', true); }
+  if (m==='dv' && !layerOn.dv) setLayer('dv', true);
   refresh();
 }
-$('#m-fh').onclick = ()=>setMode('fh'); $('#m-h23').onclick = ()=>setMode('h23');
+Object.keys(MODES).forEach(k=>{ $('#m-'+k).onclick = ()=>setMode(k); });
 
 const HOW = {
   pop:   ['WorldPop 2026 people living in 100 m cells inside the hazard footprint.', 'log'],
   idp:   ['People in CCCM IDP sites within about 1 km of the hazard footprint (site coordinates are approximate).', 'log'],
-  gauge: ['FloodHub gauge forecast in the district: (1 × above normal + 2 × severe + 3 × extreme) ÷ (3 × all gauges). 0 when a district has no gauges. Uses the live forecast in both scenarios.', 'lin'],
+  gauge: ['FloodHub gauge forecast in the district: (1 × above normal + 2 × severe + 3 × extreme) ÷ (3 × all gauges). 0 when a district has no gauges. Uses the live forecast in every scenario.', 'lin'],
   bldg:  ['Overture building footprints whose centre falls inside the hazard footprint.', 'log'],
   stock: ['IDPs already in the district (IOM DTM). This measures vulnerability, so it does not depend on the hazard.', 'log'],
 };
 function drawHow(){
   const tw = COMP.reduce((a,c)=>a+c.w,0);
-  const hz = mode==='fh' ? 'the live FloodHub forecast footprint (significant event + flash-flood alerts)' : 'the UNOSAT 2023 El Niño flood extent';
+  const hz = {fh:'the live FloodHub forecast footprint (significant event + flash-flood alerts)',
+    dv:'the derived flood zone (JRC flood-hazard cells in the sub-basins of severe and extreme gauges)', h23:'the UNOSAT 2023 El Niño flood extent'}[mode];
   $('#howto').innerHTML = `
     <h3>How the index is calculated</h3>
     <p>Each district gets a score from 0 to 1 on five components, measured against ${hz}. The index is the weighted average of those scores, times 100:</p>
@@ -526,12 +563,14 @@ $('#methods').innerHTML = `
 <p><b>Index.</b> See "How the index is calculated" under the weight sliders.</p>
 <ul>
 <li><b>Live forecast:</b> Google FloodHub API, pulled ${new Date(S.floodhub.pulled_utc).toUTCString().slice(5,22)} UTC: ${S.floodhub.n_significant} significant riverine event, ${S.floodhub.n_flash_events} flash-flood alerts and ${S.floodhub.n_gauges.toLocaleString()} gauges (including non-verified HydroBASINS gauges). The event polygon covers about ${fmt(S.haz_km2_fh)} km² inside Somalia, while FloodHub puts the flooded area at ${ev?full(ev.area_km2):'–'} km². Footprint counts are therefore upper bounds.</li>
+<li><b>Derived flood zone (not a FloodHub product):</b> built here for days when FloodHub publishes no significant event. Each FloodHub gauge sits on a HydroBASINS level-12 sub-basin. For gauges forecast severe or extreme (${fmt(DV.n_flagged_gauges||0)} today), the zone takes their sub-basins plus the sub-basins downstream as far as the next gauge (${fmt(DV.n_zone_basins||0)} sub-basins). It keeps the cells that the JRC / GloFAS global river flood hazard map (v2.1, ~90 m) floods at a matching return period: 10-year for severe, 20-year for extreme. FloodHub's thresholds sit near the 5- and 20-year flows, and JRC has no return period below 10 years. JRC's flagged spurious-depth areas are removed. Gauges on small channels that drain inland are skipped: the sub-basin is endorheic and the danger-level flow is under ${DV.min_endo_danger_m3s||20} m³/s (${fmt(DV.n_skipped_endorheic||0)} gauges today). There the JRC map spreads shallow water over flat ground. Without this rule, one sheet over Gaalkacyo town held most of the derived zone's people. All of today's severe and extreme gauges are model-only (not quality-verified).${S.derived_check?` Check against the ${d(S.derived_check.day)} FloodHub event: ${Math.round(S.derived_check.share_derived_inside_floodhub*100)}% of the derived zone fell inside FloodHub's event outline. The derived zone covered ${fmt(S.derived_check.km2_derived)} km² and ${fmt(S.derived_check.pop_derived)} people. The outline covered ${fmt(S.derived_check.km2_floodhub)} km² and ${fmt(S.derived_check.pop_floodhub)} people, while FloodHub's own estimate was ${fmt(S.derived_check.fh_area_km2)} km² flooded and ${fmt(S.derived_check.fh_affected_pop)} people affected. So the derived zone marks where flooding is likely rather than the full outline.`:''}</li>
 <li><b>2023 El Niño analog:</b> UNOSAT FL20231105SOM cumulative flood extents, 1 Nov – 3 Dec 2023 (VIIRS, Sentinel-1/2, RCM, WorldView, Pléiades, GF-2). There are ${S.unosat_layers||23} extent layers, rasterised to 100 m. Small detections fill whole pixels, which inflates the extent slightly. Areas the satellites did not image are missing.</li>
 <li><b>Population:</b> WorldPop 2026 constrained, 100 m (R2025A v1); ${fmt(S.pop_somalia)} people inside OCHA districts.</li>
 <li><b>Buildings:</b> Overture Maps ${S.overture_release}: ${fmt(S.bldg_total)} footprints inside Somalia, counted by footprint centre.</li>
 <li><b>Roads:</b> OpenStreetMap via Geofabrik, ${fmt(S.road_km)} km. Each road is sampled every 50 m against the hazard grid.</li>
 <li><b>Displacement:</b> IOM DTM district IDP figures (${S.dtm_date}, ${fmt(S.idp_dtm)} IDPs). DTM reports Banadir as one unit, so its total is split across the Mogadishu districts by population. IOM DTM Emergency Trend Tracking, ${S.ett_range[0]} to ${S.ett_range[1]}: ${fmt(S.ett_arrivals)} new arrivals, of which ${fmt(S.ett_causes['Natural Hazards']||0)} were natural-hazard driven, almost all by drought.</li>
 <li><b>IDP sites:</b> CCCM Cluster IDP Site Master List, Q4 2024: ${fmt(S.sites)} verified sites holding ${fmt(S.site_ind)} people. Site coordinates are approximate, so a site counts as exposed when it lies within about 1 km of the hazard.</li>
+<li><b>Health facilities:</b> Somalia - Health Facilities (HDX, also on the SoDMA data portal, 2021; CC BY-IGO). ${fmt(S.hf_listed)} facilities are listed, and ${fmt(S.hf_total)} have usable coordinates (${Object.entries(S.hf_by_kind||{}).map(([k,v])=>v+' '+k).join(', ')}). Some coordinates were typed as packed degrees-minutes-seconds; these are decoded and kept only when they fall in the facility's stated region. Locations are approximate, so a facility counts as exposed when it lies within about 1 km of the hazard. Facilities without coordinates are left out, so treat the counts as a minimum. They are not part of the index.</li>
 <li><b>Boundaries:</b> OCHA COD-AB Somalia v03, 2025.</li>
 </ul>
 <p class="sub">Generated ${S.generated.replace('T',' ')} UTC. Re-run <span class="data">python scripts/run_all.py</span> to refresh the forecast.</p>`;

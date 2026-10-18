@@ -2,12 +2,13 @@
 
 **Live app:** https://aschroedercr.github.io/somalia-flood-exposure/
 
-An interactive map that ranks Somalia's 91 districts by flood exposure under two scenarios:
+An interactive map that ranks Somalia's 91 districts by flood exposure under three scenarios:
 
 - **Live forecast.** Google FloodHub significant river-flood events, flash-flood alerts, and forecasts for ~1,000 river gauges. Each gauge popup shows a forecast discharge chart against its warning, danger and extreme thresholds.
+- **Derived zone (gauges + JRC).** Built here, not by FloodHub, for days when FloodHub publishes no significant event. It takes the HydroBASINS sub-basins of gauges forecast severe or extreme, plus the reaches downstream to the next gauge. Within those it keeps the cells the JRC / GloFAS river flood hazard map floods at a 10-year (severe) or 20-year (extreme) return period. Gauges on small inland-draining channels are skipped (endorheic sub-basin and a danger-level flow under 20 m³/s). There the JRC map spreads shallow sheets over flat ground; without this rule, Gaalkacyo town alone was most of the zone's population.
 - **2023 El Niño analog.** UNOSAT's satellite-mapped flood extents from the 2023 Deyr floods (1 Nov – 3 Dec 2023), the last El Niño / positive-IOD season.
 
-For each district it counts the people, buildings, roads and IDP sites in the flood zone, and combines them into an exposure index whose weights you can adjust. The app explains how the index is calculated.
+For each district it counts the people, buildings, roads, IDP sites and health facilities in the flood zone, and combines them into an exposure index whose weights you can adjust. The app explains how the index is calculated.
 
 ## Data sources
 
@@ -21,12 +22,14 @@ For each district it counts the people, buildings, roads and IDP sites in the fl
 | Roads | OpenStreetMap via Geofabrik |
 | Displacement | IOM DTM district IDP figures and Emergency Trend Tracking (HDX) |
 | IDP sites | CCCM Cluster IDP Site Master List, Q4 2024 (HDX) |
+| Health facilities | Somalia - Health Facilities (HDX, 2021; also on the SoDMA data portal). Only 258 of 519 facilities have usable coordinates |
+| Derived zone | HydroBASINS level 12 (Africa) and JRC / GloFAS global river flood hazard maps v2.1 (RP10, RP20) |
 
 The forecast counts use FloodHub's event outline, which is much larger than the flooded area FloodHub itself reports, so treat them as upper bounds. The index ranks relative exposure. It does not predict damage or the number of people affected.
 
 ## Rebuilding the data
 
-Requires Python 3.11+ with `geopandas`, `pyogrio`, `pyarrow`, `pillow`, `scipy`, `requests` and `openpyxl`.
+Requires Python 3.11+ with `geopandas`, `pyogrio`, `pyarrow`, `pillow`, `scipy`, `rasterio`, `requests` and `openpyxl`.
 
 1. Put your FloodHub API key in a file named `FloodHub API Key.txt` in the repo root. It is git-ignored; never commit it.
 2. Run the pipeline:
@@ -40,12 +43,14 @@ python scripts/run_all.py --full
 | Script | Step |
 |---|---|
 | `01_floodhub.py` | FloodHub events, gauges, statuses, forecast series, thresholds |
-| `02_download_hdx.py` | OCHA boundaries, IOM DTM, CCCM sites |
+| `02_download_hdx.py` | OCHA boundaries, IOM DTM, CCCM sites, health facilities |
 | `03_download_pop_osm.py` | WorldPop raster, OSM extract |
 | `04_osm_roads.py` | Road network from the OSM extract |
 | `05_overture_buildings.py` | Overture building footprints for Somalia |
 | `05b_unosat_2023.py` | Cleaned UNOSAT 2023 flood extent |
+| `05c_derived_zone.py` | Derived flood zone from gauge severity, HydroBASINS and JRC (downloads ~190 MB on first run) |
 | `06_exposure.py` | District exposure metrics and web layers in `app/data/` |
+| `compare_derived_vs_floodhub.py` | One-off check of the derived zone against a past FloodHub event polygon |
 
 To preview locally, run `python -m http.server 8765 --directory app` and open http://localhost:8765.
 
