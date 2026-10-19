@@ -1,17 +1,16 @@
 {
- "generated": "2026-10-18T22:41+00:00",
+ "generated": "2026-10-19T22:17+00:00",
  "floodhub": {
-  "pulled_utc": "2026-10-18T22:04:02.314852+00:00",
+  "pulled_utc": "2026-10-19T22:15:53.177151+00:00",
   "n_flash_events": 0,
   "n_flash_polys": 0,
   "n_significant": 0,
   "n_gauges": 1008,
   "n_inundation_maps": 0,
   "severity_counts": {
-   "NO_FLOODING": 578,
-   "ABOVE_NORMAL": 250,
-   "SEVERE": 171,
-   "EXTREME": 9
+   "NO_FLOODING": 640,
+   "ABOVE_NORMAL": 321,
+   "SEVERE": 47
   },
   "significant": []
  },
@@ -60,21 +59,21 @@
   "Other": 7,
   "TB Center": 3
  },
- "pop_dv": 35106,
- "haz_km2_dv": 2502,
- "bldg_dv": 5477,
- "road_km_dv": 2614,
- "mroad_km_dv": 70,
+ "pop_dv": 1494,
+ "haz_km2_dv": 741,
+ "bldg_dv": 159,
+ "road_km_dv": 868,
+ "mroad_km_dv": 33,
  "sites_dv": 0,
  "site_ind_dv": 0,
- "hf_dv": 2,
+ "hf_dv": 0,
  "derived": {
-  "n_flagged_gauges": 180,
-  "n_skipped_endorheic": 70,
+  "n_flagged_gauges": 47,
+  "n_skipped_endorheic": 22,
   "min_endo_danger_m3s": 20,
-  "n_zone_basins": 125,
-  "n_wet_basins": 124,
-  "basin_km2": 11599,
+  "n_zone_basins": 32,
+  "n_wet_basins": 31,
+  "basin_km2": 2483,
   "rp_by_severity": {
    "SEVERE": 10,
    "EXTREME": 20
@@ -112,10 +111,9 @@
  },
  "overture_release": "2026-09-23.1",
  "gauges_by_sev": {
-  "NO_FLOODING": 578,
-  "ABOVE_NORMAL": 250,
-  "SEVERE": 171,
-  "EXTREME": 9
+  "NO_FLOODING": 640,
+  "ABOVE_NORMAL": 321,
+  "SEVERE": 47
  },
  "unosat_layers": 23
 }
