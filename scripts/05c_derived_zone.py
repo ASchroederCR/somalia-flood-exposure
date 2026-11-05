@@ -16,10 +16,13 @@ Output: data/processed/derived_zone.geojson (+ derived_zone_meta.json).
     python scripts/05c_derived_zone.py GAUGES.geojson OUT   # any gauge file with gauge_id + severity
                                                             # (danger levels come from floodhub_gauge_forecasts.json)
 """
-import json, pathlib, sys
+import functools, json, pathlib, sys, zlib
 import numpy as np, geopandas as gpd, pandas as pd, shapely
-# rasterio is imported only when there are zone basins to clip (see build()): on flood-free days the
-# step must still run where rasterio's DLLs are blocked by Windows application control.
+from PIL import Image
+# No rasterio: Windows application control on the pipeline machine blocks its DLLs. The JRC tiles are read with
+# the small GeoTiff reader below, the sub-basin mask uses shapely.contains_xy and the wet cells are vectorized
+# by unioning per-row runs of cells.
+Image.MAX_IMAGE_PIXELS = None
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 RAW, PROC = ROOT / "data/raw", ROOT / "data/processed"
@@ -88,29 +91,82 @@ def zone_basins(gauges, basins, skip=()):
     return out
 
 
+class GeoTiff:
+    """Window reader for the JRC tiles: tiled, deflate, no predictor, GDAL-sparse (empty tiles have byte count 0,
+    which Pillow's libtiff refuses to decode). Pillow parses the tags; each tile is inflated with zlib."""
+
+    def __init__(self, path):
+        im = Image.open(path)
+        t = im.tag_v2
+        if t.get(259) != 8 or t.get(317, 1) != 1 or t.get(277, 1) != 1 or 322 not in t:
+            raise ValueError(f"{path.name}: expected a single-band tiled deflate GeoTIFF without predictor")
+        endian = "<" if open(path, "rb").read(2) == b"II" else ">"
+        self.dtype = np.dtype(endian + {(3, 32): "f4", (1, 8): "u1", (1, 16): "u2", (2, 16): "i2"}[(t.get(339, (1,))[0], t[258][0])])
+        self.W, self.H = im.size
+        self.tw, self.th = t[322], t[323]
+        self.ntx = -(-self.W // self.tw)
+        self.off, self.cnt = t[324], t[325]
+        tp, ps = t[33922], t[33550]
+        self.x0, self.y0, self.res = tp[3], tp[4], ps[0]
+        self.nodata = self.dtype.type(float(t[42113])) if 42113 in t else None
+        self.f = open(path, "rb")
+        self.tile = functools.lru_cache(maxsize=256)(self._tile)
+        im.close()
+
+    def _tile(self, i):
+        if not self.cnt[i]:                       # sparse: never written, reads as nodata
+            return np.full((self.th, self.tw), self.nodata or 0, self.dtype)
+        self.f.seek(self.off[i])
+        return np.frombuffer(zlib.decompress(self.f.read(self.cnt[i])), self.dtype).reshape(self.th, self.tw)
+
+    def window(self, x0, y0, x1, y1):
+        """(row, col, height, width) of the cells whose centres fall in the bounds, clipped to the raster."""
+        c0, c1 = max(int(np.floor((x0 - self.x0) / self.res + 0.5)), 0), min(int(np.ceil((x1 - self.x0) / self.res - 0.5)), self.W)
+        r0, r1 = max(int(np.floor((self.y0 - y1) / self.res + 0.5)), 0), min(int(np.ceil((self.y0 - y0) / self.res - 0.5)), self.H)
+        return r0, c0, r1 - r0, c1 - c0
+
+    def read(self, r0, c0, h, w):
+        out = np.empty((h, w), self.dtype)
+        for tr in range(r0 // self.th, (r0 + h - 1) // self.th + 1):
+            for tc in range(c0 // self.tw, (c0 + w - 1) // self.tw + 1):
+                a = self.tile(tr * self.ntx + tc)
+                ya, yb = max(r0, tr * self.th), min(r0 + h, (tr + 1) * self.th)
+                xa, xb = max(c0, tc * self.tw), min(c0 + w, (tc + 1) * self.tw)
+                out[ya - r0:yb - r0, xa - c0:xb - c0] = a[ya - tr * self.th:yb - tr * self.th, xa - tc * self.tw:xb - tc * self.tw]
+        return out
+
+    def close(self):
+        self.f.close()
+
+
+def cells_to_polygons(mask, x0, y0, res):
+    """Union of the cells set in a boolean grid (row 0 at top, cell edges at x0 + c*res, y0 - r*res)."""
+    boxes = []
+    for r in np.flatnonzero(mask.any(axis=1)):
+        d = np.diff(np.concatenate(([0], mask[r].view(np.int8), [0])))
+        s, e = np.flatnonzero(d == 1), np.flatnonzero(d == -1)
+        boxes.append(shapely.box(x0 + s * res, y0 - (r + 1) * res, x0 + e * res, y0 - r * res))
+    return shapely.union_all(np.concatenate(boxes)) if boxes else None
+
+
 def flooded(geom, rp, srcs):
-    """Polygons of JRC-flooded cells (depth > 0, not spurious) inside one sub-basin."""
-    from rasterio.features import rasterize, shapes
-    from rasterio.windows import from_bounds
+    """Polygons of JRC-flooded cells (depth > 0, not spurious) whose centres lie inside one sub-basin."""
     parts = []
     for t, (dep, spu) in srcs[rp].items():
-        b = dep.bounds
-        x0, y0, x1, y1 = geom.bounds
-        x0, y0, x1, y1 = max(x0, b.left), max(y0, b.bottom), min(x1, b.right), min(y1, b.top)
-        if x0 >= x1 or y0 >= y1:
+        r0, c0, h, w = dep.window(*geom.bounds)
+        if h < 1 or w < 1:
             continue
-        win = from_bounds(x0, y0, x1, y1, dep.transform).round_offsets().round_lengths()
-        if win.width < 1 or win.height < 1:
-            continue
-        d = dep.read(1, window=win, boundless=True, fill_value=0)
-        s = spu.read(1, window=win, boundless=True, fill_value=0)
-        tr = dep.window_transform(win)
-        nd = dep.nodata
-        wet = np.isfinite(d) & (d > 0) & ((d != nd) if nd is not None else True) & (s != 1)  # spurious = 1, else nodata
+        d = dep.read(r0, c0, h, w)
+        s = spu.read(r0, c0, h, w)
+        wet = np.isfinite(d) & (d > 0) & ((d != dep.nodata) if dep.nodata is not None else True) & (s != 1)  # spurious = 1, else nodata
         if not wet.any():
             continue
-        wet &= rasterize([geom], out_shape=d.shape, transform=tr, fill=0, default_value=1, dtype="uint8").astype(bool)
-        parts += [shapely.geometry.shape(g) for g, v in shapes(wet.astype("uint8"), mask=wet, transform=tr) if v == 1]
+        x0, y0 = dep.x0 + c0 * dep.res, dep.y0 - r0 * dep.res
+        rr, cc = np.nonzero(wet)
+        wet[rr, cc] = shapely.contains_xy(geom, x0 + (cc + 0.5) * dep.res, y0 - (rr + 0.5) * dep.res)
+        g = cells_to_polygons(wet, x0, y0, dep.res)
+        if g is not None:
+            parts.append(g)
     return shapely.union_all(parts) if parts else None
 
 
@@ -118,11 +174,8 @@ def build(gauges, danger, basins=None):
     basins = load_basins() if basins is None else basins
     skip = skipped(gauges, basins, danger)
     zb = zone_basins(gauges, basins, skip)
-    srcs = {}
-    if zb:
-        import rasterio
-        srcs = {rp: {t: (rasterio.open(JRC / f"{t}_RP{rp}_depth.tif"), rasterio.open(JRC / f"{t}_spurious_depth_areas.tif")) for t in TILES}
-                for rp in RP.values()}
+    srcs = {rp: {t: (GeoTiff(JRC / f"{t}_RP{rp}_depth.tif"), GeoTiff(JRC / f"{t}_spurious_depth_areas.tif")) for t in TILES}
+            for rp in RP.values()} if zb else {}
     rows = []
     for h, s in zb.items():
         g = flooded(basins.geometry[h], RP[s], srcs)

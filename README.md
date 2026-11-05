@@ -29,7 +29,7 @@ The forecast counts use FloodHub's event outline, which is much larger than the 
 
 ## Rebuilding the data
 
-Requires Python 3.11+ with `geopandas`, `pyogrio`, `pyarrow`, `pillow`, `scipy`, `rasterio`, `requests` and `openpyxl`.
+Requires Python 3.11+ with `geopandas`, `pyogrio`, `pyarrow`, `pillow`, `scipy`, `requests` and `openpyxl`.
 
 1. Put your FloodHub API key in a file named `FloodHub API Key.txt` in the repo root. It is git-ignored; never commit it.
 2. Run the pipeline:

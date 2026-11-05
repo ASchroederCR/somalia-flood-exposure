@@ -5,9 +5,10 @@ with that day's event polygon: area, overlap, IoU and WorldPop population. Write
     python scripts/compare_derived_vs_floodhub.py [COMMIT] [POLYGON_ID]
 """
 import io, json, pathlib, subprocess, sys, urllib.request
-import numpy as np, geopandas as gpd, shapely, rasterio
-from rasterio.features import rasterize
-from rasterio.windows import from_bounds
+import numpy as np, geopandas as gpd, shapely
+from PIL import Image, ImageDraw
+from scipy.ndimage import binary_dilation
+Image.MAX_IMAGE_PIXELS = None
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -40,17 +41,39 @@ eq = lambda g: float(gpd.GeoSeries([g], crs=4326).to_crs(6933).area.iloc[0] / 1e
 inter, union = fh_s.intersection(dv_s), fh_s.union(dv_s)
 
 # WorldPop people inside each footprint
-pop = rasterio.open(ROOT / "data/raw/worldpop/som_pop_2026_CN_100m_R2025A_v1.tif")
+im = Image.open(ROOT / "data/raw/worldpop/som_pop_2026_CN_100m_R2025A_v1.tif")
+tp, ps = im.tag_v2[33922], im.tag_v2[33550]
+X0, Y0, RES = tp[3], tp[4], ps[0]
+pop = np.array(im, dtype=np.float64)
+pop[~np.isfinite(pop) | (pop < 0)] = 0
 
 
 def people(g):
+    """WorldPop sum over every cell a footprint touches (rasterio's all_touched): Pillow burns the cells whose
+    centres are inside, then the one-cell ring around them is tested exactly with shapely. The derived zone is
+    made of 90 m strips, so centre sampling alone on the 100 m grid misses ~8% of its people."""
     if g.is_empty:
         return 0
-    win = from_bounds(*g.bounds, pop.transform).round_offsets().round_lengths()
-    a = pop.read(1, window=win, boundless=True, fill_value=0).astype("float64")
-    a[~np.isfinite(a) | (a < 0)] = 0
-    m = rasterize([g], out_shape=a.shape, transform=pop.window_transform(win), fill=0, default_value=1, dtype="uint8", all_touched=True)
-    return round(float(a[m == 1].sum()))
+    x0, y0, x1, y1 = g.bounds
+    c0, r0 = max(int((x0 - X0) / RES) - 1, 0), max(int((Y0 - y1) / RES) - 1, 0)
+    c1, r1 = min(int((x1 - X0) / RES) + 2, pop.shape[1]), min(int((Y0 - y0) / RES) + 2, pop.shape[0])
+    if c0 >= c1 or r0 >= r1:
+        return 0
+    img = Image.new("1", (c1 - c0, r1 - r0), 0)
+    dr = ImageDraw.Draw(img)
+    px = lambda cs: [((x - X0) / RES - c0 - 0.5, (Y0 - y) / RES - r0 - 0.5) for x, y in cs]   # pixel centres
+    for p in shapely.get_parts(g):
+        if p.geom_type != "Polygon":
+            continue
+        dr.polygon(px(p.exterior.coords), fill=1, outline=1)
+        for h in p.interiors:
+            dr.polygon(px(h.coords), fill=0)
+    m = np.array(img, dtype=bool)
+    rr, cc = np.nonzero(binary_dilation(m, np.ones((3, 3), bool)) & ~m)
+    shapely.prepare(g)
+    hit = shapely.intersects(g, shapely.box(X0 + (c0 + cc) * RES, Y0 - (r0 + rr + 1) * RES, X0 + (c0 + cc + 1) * RES, Y0 - (r0 + rr) * RES))
+    m[rr[hit], cc[hit]] = True
+    return round(float(pop[r0:r1, c0:c1][m].sum()))
 
 
 res = dict(day=day, commit=COMMIT, derived=meta, fh_area_km2=ev.get("area_km2"), fh_affected_pop=ev.get("fh_affected_pop"),
