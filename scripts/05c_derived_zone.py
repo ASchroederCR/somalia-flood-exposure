@@ -18,9 +18,8 @@ Output: data/processed/derived_zone.geojson (+ derived_zone_meta.json).
 """
 import json, pathlib, sys
 import numpy as np, geopandas as gpd, pandas as pd, shapely
-import rasterio
-from rasterio.features import rasterize, shapes
-from rasterio.windows import from_bounds
+# rasterio is imported only when there are zone basins to clip (see build()): on flood-free days the
+# step must still run where rasterio's DLLs are blocked by Windows application control.
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 RAW, PROC = ROOT / "data/raw", ROOT / "data/processed"
@@ -91,6 +90,8 @@ def zone_basins(gauges, basins, skip=()):
 
 def flooded(geom, rp, srcs):
     """Polygons of JRC-flooded cells (depth > 0, not spurious) inside one sub-basin."""
+    from rasterio.features import rasterize, shapes
+    from rasterio.windows import from_bounds
     parts = []
     for t, (dep, spu) in srcs[rp].items():
         b = dep.bounds
@@ -117,8 +118,11 @@ def build(gauges, danger, basins=None):
     basins = load_basins() if basins is None else basins
     skip = skipped(gauges, basins, danger)
     zb = zone_basins(gauges, basins, skip)
-    srcs = {rp: {t: (rasterio.open(JRC / f"{t}_RP{rp}_depth.tif"), rasterio.open(JRC / f"{t}_spurious_depth_areas.tif")) for t in TILES}
-            for rp in RP.values()}
+    srcs = {}
+    if zb:
+        import rasterio
+        srcs = {rp: {t: (rasterio.open(JRC / f"{t}_RP{rp}_depth.tif"), rasterio.open(JRC / f"{t}_spurious_depth_areas.tif")) for t in TILES}
+                for rp in RP.values()}
     rows = []
     for h, s in zb.items():
         g = flooded(basins.geometry[h], RP[s], srcs)
