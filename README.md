@@ -51,6 +51,7 @@ python scripts/run_all.py --full
 | `05c_derived_zone.py` | Derived flood zone from gauge severity, HydroBASINS and JRC (downloads ~190 MB on first run) |
 | `06_exposure.py` | District exposure metrics and web layers in `app/data/` |
 | `compare_derived_vs_floodhub.py` | One-off check of the derived zone against a past FloodHub event polygon |
+| `publish_refresh.py` | Commit refreshed `app/data` and push to `main` (used by the daily refresh; refuses to commit if the API key is staged) |
 
 To preview locally, run `python -m http.server 8765 --directory app` and open http://localhost:8765.
 
