@@ -1,14 +1,15 @@
 {
- "generated": "2026-11-09T20:33+00:00",
+ "generated": "2026-11-10T19:36+00:00",
  "floodhub": {
-  "pulled_utc": "2026-11-09T20:27:29.539415+00:00",
+  "pulled_utc": "2026-11-10T19:35:31.230480+00:00",
   "n_flash_events": 0,
   "n_flash_polys": 0,
   "n_significant": 0,
   "n_gauges": 1008,
   "n_inundation_maps": 0,
   "severity_counts": {
-   "NO_FLOODING": 1008
+   "NO_FLOODING": 999,
+   "ABOVE_NORMAL": 9
   },
   "significant": []
  },
@@ -109,7 +110,8 @@
  },
  "overture_release": "2026-09-23.1",
  "gauges_by_sev": {
-  "NO_FLOODING": 1008
+  "NO_FLOODING": 999,
+  "ABOVE_NORMAL": 9
  },
  "unosat_layers": 23
 }
