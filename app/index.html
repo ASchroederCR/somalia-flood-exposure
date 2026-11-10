@@ -130,6 +130,11 @@ table{border-collapse:collapse;width:100%}
 .hydro .past{stroke-dasharray:3 3;opacity:.7}
 .hydro .pt{fill:var(--accent);stroke:var(--panel);stroke-width:2}
 .hydro .hit{fill:transparent;cursor:crosshair}
+.hydro .l48{fill:var(--ink);opacity:.07}
+.legend .seg2{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.legend .seg2 button{all:unset;cursor:pointer;text-align:center;padding:4px 6px;font:500 11.5px var(--f-body);color:var(--muted)}
+.legend .seg2 button[aria-pressed="true"]{background:var(--accent);color:var(--panel)}
+.legend .seg2 button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .hydro .now{stroke:var(--ink);stroke-width:1;stroke-dasharray:2 2;opacity:.6}
 .hydro .tip[hidden]{display:none}
 .hydro .tip rect{fill:var(--ink)} .hydro .tip text{fill:var(--panel);font-weight:500}
@@ -308,6 +313,36 @@ const ramp = () => ['--r0','--r1','--r2','--r3','--r4'].map(css);
 const rampColor = v => { const r = ramp(); return v<=0 ? r[0] : r[Math.min(4, 1+Math.floor(v/25))]; };
 const sevColor = s => css('--sev'+Math.max(0,s));
 
+// ---------- gauges: threshold exceedance at least 48 h after the forecast was issued
+// FloodHub series are daily means. A day counts when its midpoint (12:00 UTC) is 48 h or more after issue.
+// Level = highest threshold the forecast reaches on such a day: 0 below warning, 1 warning, 2 danger, 3 extreme; -1 no series.
+const LEAD_H = 48;
+const THN = ['Below warning','Warning','Danger','Extreme'];
+function lead48(fc){
+  if (!fc || !fc.v || !fc.v.length) return {lv:-1};
+  const iss = Date.parse(fc.issued), t0 = Date.parse(fc.start+'T00:00:00Z');
+  let lv = 0, first = null, firstDay = null;
+  fc.v.forEach((v,i)=>{
+    const mid = t0 + i*864e5 + 432e5;
+    if (v==null || mid - iss < LEAD_H*36e5) return;
+    if (firstDay==null) firstDay = i;
+    const l = (fc.th||[]).reduce((a,t,j)=>t!=null && v>=t ? j+1 : a, 0);
+    if (l>0 && first==null) first = i;
+    if (l>lv) lv = l;
+  });
+  return firstDay==null ? {lv:-1} : {lv, first, firstDay};
+}
+gauges.features.forEach(f=>{ f.properties._l48 = lead48(FC[f.properties.gauge_id]); });
+const L48_COUNT = [0,1,2,3].map(l=>gauges.features.filter(f=>f.properties._l48.lv===l).length);
+const L48_NONE = gauges.features.filter(f=>f.properties._l48.lv<0).length;
+let gaugeMode = 'l48';   // 'l48' = exceedance 48 h+ ahead, 'now' = FloodHub's current status
+function gaugeStyle(f){
+  const p = f.properties;
+  if (gaugeMode==='l48' && p._l48.lv<0) return {radius:2.5, color:css('--sev0'), weight:1, fill:false, opacity:.6};
+  const s = gaugeMode==='l48' ? p._l48.lv : (SEVK[p.severity]??0);
+  return {radius:2.5+s*1.3, color:css('--panel'), weight:.8, fill:true, fillColor:sevColor(s), fillOpacity:s?0.95:.6, opacity:1};
+}
+
 const distLayer = L.geoJSON(dist, {pane:'choro', style: f=>({}), onEachFeature:(f,l)=>{
   l.on('click', ()=>select(f.properties.adm2_pcode, false));
   l.bindTooltip(()=>`<b>${f.properties.adm2_name}</b> · ${f.properties.adm1_name}<br>Index ${f.properties._idx.toFixed(0)} · rank ${f.properties._rank}`, {sticky:true});
@@ -320,7 +355,7 @@ const fhLayer = L.geoJSON(fhz, {pane:'hazard', style:f=>({color:css('--river'), 
 const dvLayer = L.geoJSON(dvz, {pane:'hazard', style:()=>({}),
   onEachFeature:(f,l)=>l.bindTooltip(`Derived flood zone · ${f.properties.severity.toLowerCase()} gauges · JRC ${f.properties.rp}-year flood extent<br><small>Not a FloodHub product</small>`, {sticky:true})});
 const gaugeLayer = L.geoJSON(gauges, {pane:'points', pointToLayer:(f,ll)=>L.circleMarker(ll,{renderer:ptsRenderer}),
-  style:f=>{const s=SEVK[f.properties.severity]??0; return {radius:2.5+s*1.3, color:css('--panel'), weight:.8, fillColor:sevColor(s), fillOpacity:s?0.95:.6};},
+  style:gaugeStyle,
   onEachFeature:(f,l)=>{const p=f.properties; l.bindPopup(()=>gaugePopup(p), {maxWidth:360, minWidth:300, autoPanPaddingTopLeft:[20,20], autoPanPaddingBottomRight:[270,40]});}});
 gaugeLayer.on('popupopen', e=>wireHydro(e.popup.getElement()));
 const siteLayer = L.geoJSON(sites, {pane:'points', pointToLayer:(f,ll)=>new SquareMarker(ll,{renderer:ptsRenderer}), style:()=>({}),
@@ -337,7 +372,12 @@ function styleAll(){
   regLayer.setStyle({color:css('--ink')});
   fhLayer.setStyle(f=>({color:css('--river'), weight: f.properties.kind==='significant'?2.2:2.5, fillColor:css('--river'), fillOpacity: mode==='fh'?.28:.1, opacity: mode==='fh'?1:.55}));
   dvLayer.setStyle(f=>({color:css('--derived'), weight: mode==='dv'?1:.6, fillColor:css('--derived'), fillOpacity: mode==='dv'?(f.properties.severity==='EXTREME'?.75:.5):.2, opacity: mode==='dv'?1:.5}));
-  gaugeLayer.setStyle(f=>{const s=SEVK[f.properties.severity]??0; return {radius:2.5+s*1.3, color:css('--panel'), weight:.8, fillColor:sevColor(s), fillOpacity:s?0.95:.6};});
+  gaugeLayer.setStyle(gaugeStyle);
+  // draw the most severe gauges on top
+  if (map.hasLayer(gaugeLayer)) {
+    const lvl = l => { const p=l.feature.properties; return gaugeMode==='l48' ? p._l48.lv : (SEVK[p.severity]??0); };
+    gaugeLayer.getLayers().filter(l=>lvl(l)>0).sort((a,b)=>lvl(a)-lvl(b)).forEach(l=>l.bringToFront());
+  }
   const flag = 'near_' + SX();
   siteLayer.setStyle(f=>({radius: Math.min(SITE_MAX_R, Math.max(2, Math.sqrt(f.properties.ind)/10.5)), color: f.properties[flag] ? css('--site') : css('--panel'), weight: f.properties[flag] ? 1.2 : .6, opacity: SITE_OPACITY,
     fillColor: f.properties[flag] ? css('--site-risk') : css('--site'), fillOpacity: SITE_OPACITY}));
@@ -356,11 +396,15 @@ function gaugePopup(p){
   const s = SEVK[p.severity];
   const head = `<div class="gp-head"><b>FloodHub gauge</b><span class="chip s${s??'n'}">${p.severity.replace('_',' ')}</span><span class="gp-meta">trend ${(p.trend||'–').toLowerCase()}</span></div>
     <div class="gp-meta">${p.district||'Outside Somalia'} · <span class="data">${p.gauge_id}</span>${p.verified?'':' · not quality-verified'}</div>`;
-  const fc = FC[p.gauge_id];
-  return head + (fc ? hydro(fc) : '<div class="gp-meta" style="margin-top:6px">No forecast series for this gauge.</div>');
+  const fc = FC[p.gauge_id], L = p._l48;
+  const ahead = !fc ? '' : L.lv<0 ? `<div class="gp-meta" style="margin-top:4px">The forecast does not reach ${LEAD_H} h past issue.</div>`
+    : `<div class="gp-head" style="margin-top:6px"><b style="font-weight:500">${LEAD_H} h+ ahead</b><span class="chip s${L.lv}">${THN[L.lv].toUpperCase()}</span><span class="gp-meta">${L.lv
+      ? `from ${dlab(new Date(Date.parse(fc.start+'T00:00:00Z') + L.first*864e5))}`
+      : `peak below warning level`}</span></div>`;
+  return head + ahead + (fc ? hydro(fc, L.firstDay) : '<div class="gp-meta" style="margin-top:6px">No forecast series for this gauge.</div>');
 }
 function niceMax(v){ const p = Math.pow(10, Math.floor(Math.log10(v))); const f = v/p; return (f<=1?1:f<=2?2:f<=2.5?2.5:f<=5?5:10)*p; }
-function hydro(fc){
+function hydro(fc, k48){
   const W = 300, H = 170, m = {l:40, r:70, t:12, b:24};
   const iw = W-m.l-m.r, ih = H-m.t-m.b, n = fc.v.length;
   const days = fc.v.map((_,i)=>new Date(Date.parse(fc.start+'T00:00:00Z') + i*864e5));
@@ -374,6 +418,8 @@ function hydro(fc){
   const iss = Math.max(0, days.findIndex(dd => dd.getTime() + 864e5 > issued));   // first day at or after issue
   const pts = fc.v.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`);
   let svg = `<svg class="hydro" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Forecast discharge, ${dlab(days[0])} to ${dlab(days[n-1])}">`;
+  if (k48!=null && n>1) { const x0 = Math.max(m.l, x(k48) - iw/(n-1)/2);
+    svg += `<rect class="l48" x="${x0}" y="${m.t}" width="${m.l+iw-x0}" height="${ih}"/><text x="${m.l+iw-3}" y="${m.t+ih-4}" text-anchor="end" style="font-size:9.5px">${LEAD_H} h+</text>`; }
   [0, ymax/2, ymax].forEach(t=>{ svg += `<line class="grid" x1="${m.l}" x2="${m.l+iw}" y1="${y(t)}" y2="${y(t)}"/><text x="${m.l-6}" y="${y(t)+3.5}" text-anchor="end">${fmtq(t)}</text>`; });
   let lastLy = -99;
   th.filter(t=>t.v<=ymax).forEach(t=>{
@@ -449,7 +495,14 @@ function drawLegend(){
     <div class="ramp-l"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
     <div class="lgsec${layerOn.gauges?'':' off'}" style="display:flex;flex-direction:column;gap:6px;margin-top:4px">
       <label class="tg"><input type="checkbox" id="lg-gauges" ${layerOn.gauges?'checked':''}><h4>River gauges</h4></label>
-      ${[3,2,1,0].map(s=>`<div class="lg"><span class="dot" style="background:var(--sev${s});opacity:${s?0.95:0.6}"></span>${SEVN[s]} <span class="data" style="margin-left:auto;color:var(--muted)">${S.gauges_by_sev[Object.keys(SEVK)[s]]||0}</span></div>`).join('')}
+      <div class="seg2" role="group" aria-label="Colour gauges by">
+        <button data-gm="l48" aria-pressed="${gaugeMode==='l48'}">${LEAD_H} h+ ahead</button><button data-gm="now" aria-pressed="${gaugeMode==='now'}">FloodHub status</button>
+      </div>
+      ${[3,2,1,0].map(s=>`<div class="lg"><span class="dot" style="background:var(--sev${s});opacity:${s?0.95:0.6}"></span>${gaugeMode==='l48'?THN[s]:SEVN[s]} <span class="data" style="margin-left:auto;color:var(--muted)">${gaugeMode==='l48'?L48_COUNT[s]:(S.gauges_by_sev[Object.keys(SEVK)[s]]||0)}</span></div>`).join('')}
+      ${gaugeMode==='l48'&&L48_NONE?`<div class="lg"><span class="dot" style="background:none;border:1px solid var(--sev0)"></span>No forecast ${LEAD_H} h out <span class="data" style="margin-left:auto;color:var(--muted)">${L48_NONE}</span></div>`:''}
+      <div class="lg" style="color:var(--muted);max-width:220px">${gaugeMode==='l48'
+        ? `Highest threshold the forecast reaches ${LEAD_H} h or more after it was issued`
+        : `FloodHub's current flood status for the gauge`}</div>
     </div>
     <div class="lgsec${layerOn.sites?'':' off'}" style="display:flex;flex-direction:column;gap:6px;margin-top:4px">
       <label class="tg"><input type="checkbox" id="lg-sites" ${layerOn.sites?'checked':''}><h4>IDP sites (CCCM)</h4></label>
@@ -465,6 +518,7 @@ function drawLegend(){
     </div>`;
   el.querySelector('#lg-health').addEventListener('change', e=>setLayer('health', e.target.checked));
   el.querySelector('#lg-gauges').addEventListener('change', e=>setLayer('gauges', e.target.checked));
+  el.querySelectorAll('[data-gm]').forEach(b=>b.addEventListener('click', ()=>{ gaugeMode = b.dataset.gm; styleAll(); drawLegend(); }));
   el.querySelector('#lg-sites').addEventListener('change', e=>setLayer('sites', e.target.checked));
 }
 
