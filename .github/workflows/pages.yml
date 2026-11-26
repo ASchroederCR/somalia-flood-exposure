@@ -20,12 +20,26 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.retry1.outputs.page_url || steps.retry2.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
           path: app
+      # The deploy sometimes can't find the artifact uploaded seconds earlier ("Fetching artifact metadata failed").
+      # It is a transient GitHub API error, so wait and retry up to twice before failing the run.
       - id: deployment
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+      - if: steps.deployment.outcome == 'failure'
+        run: sleep 30
+      - id: retry1
+        if: steps.deployment.outcome == 'failure'
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+      - if: steps.retry1.outcome == 'failure'
+        run: sleep 90
+      - id: retry2
+        if: steps.retry1.outcome == 'failure'
         uses: actions/deploy-pages@v4

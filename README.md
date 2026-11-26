@@ -23,6 +23,7 @@ For each district it counts the people, buildings, roads, IDP sites and health f
 | Displacement | IOM DTM district IDP figures and Emergency Trend Tracking (HDX) |
 | IDP sites | CCCM Cluster IDP Site Master List, Q4 2024 (HDX) |
 | Health facilities | Somalia - Health Facilities (HDX, 2021; also on the SoDMA data portal). Only 258 of 519 facilities have usable coordinates |
+| Rivers | HydroRIVERS v1.0 (Africa), reaches draining ≥ 2,000 km², width by modelled mean flow |
 | Derived zone | HydroBASINS level 12 (Africa) and JRC / GloFAS global river flood hazard maps v2.1 (RP10, RP20) |
 
 The forecast counts use FloodHub's event outline, which is much larger than the flooded area FloodHub itself reports, so treat them as upper bounds. The index ranks relative exposure. It does not predict damage or the number of people affected.
@@ -49,6 +50,7 @@ python scripts/run_all.py --full
 | `05_overture_buildings.py` | Overture building footprints for Somalia |
 | `05b_unosat_2023.py` | Cleaned UNOSAT 2023 flood extent |
 | `05c_derived_zone.py` | Derived flood zone from gauge severity, HydroBASINS and JRC (downloads ~190 MB on first run) |
+| `05d_rivers.py` | River lines from HydroRIVERS into `app/data/rivers.geojson` (downloads ~108 MB on first run; only re-run with `--full`) |
 | `06_exposure.py` | District exposure metrics and web layers in `app/data/` |
 | `compare_derived_vs_floodhub.py` | One-off check of the derived zone against a past FloodHub event polygon |
 | `publish_refresh.py` | Commit refreshed `app/data` and push to `main` (used by the daily refresh; refuses to commit if the API key is staged) |

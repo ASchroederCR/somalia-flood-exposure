@@ -13,7 +13,7 @@
   color-scheme:dark;
   --ground:#000000; --panel:#0b0b0b; --ink:#ececec; --muted:#9a9a9a; --line:#262626;
   --sea:#000000; --accent:#f0f0f0;
-  --river:#0fa5c0; --flood23:#2a50d6; --derived:#39d98a;
+  --river:#0fa5c0; --flood23:#2a50d6; --derived:#39d98a; --stream:#8aa9c7;
   --sev0:#6b6b6b; --sev1:#f5a05a; --sev2:#e25a14; --sev3:#a8320a;
   --r0:#1c1c1c; --r1:#454545; --r2:#6e6e6e; --r3:#9e9e9e; --r4:#dcdcdc;
   --site:#a275f2; --site-risk:#ffffff; --road:#6e6e6e; --road-hit:#e3c91c; --pop:#4caf50; --bldg:#e3c91c; --health:#ff5c9d;
@@ -217,8 +217,8 @@ const SEVN = ['No flooding','Above normal','Severe','Extreme'];
 const SEVK = {NO_FLOODING:0,ABOVE_NORMAL:1,SEVERE:2,EXTREME:3};
 
 const get = f => fetch('data/'+f).then(r=>{ if(!r.ok) throw new Error(f+' '+r.status); return f.endsWith('.json')||f.endsWith('.geojson') ? r.json() : r; });
-const [S, R, dist, regions, fhz, gauges, sites, roads, FC, health, dvz] = await Promise.all(
-  ['summary.json','rasters.json','districts.geojson','regions.geojson','floodhub_zones.geojson','gauges.geojson','idp_sites.geojson','roads_major.geojson','gauge_forecasts.json','health_sites.geojson','derived_zones.geojson'].map(get));
+const [S, R, dist, regions, fhz, gauges, sites, roads, FC, health, dvz, rivers] = await Promise.all(
+  ['summary.json','rasters.json','districts.geojson','regions.geojson','floodhub_zones.geojson','gauges.geojson','idp_sites.geojson','roads_major.geojson','gauge_forecasts.json','health_sites.geojson','derived_zones.geojson','rivers.geojson'].map(get));
 // Scenario suffixes on the data fields (pop_fh, pop_dv, pop_2023, near_fh, …) and their labels.
 const MODES = {
   fh:  {sfx:'fh',   zone:'forecast zone', name:'live forecast', people:'People in zone'},
@@ -286,10 +286,14 @@ const map = L.map('map', {zoomControl:true, attributionControl:true, minZoom:5, 
   .fitBounds([[-1.7,40.9],[12.0,51.5]]);
 map.attributionControl.setPrefix(false).addAttribution('OCHA COD-AB · Google FloodHub · UNOSAT · WorldPop · Overture · © OpenStreetMap contributors · IOM DTM · CCCM');
 L.control.scale({imperial:false}).addTo(map);
-[['choro',350],['rasters',380],['hazard',410],['roads',420],['bounds',430],['points',450]].forEach(([n,z])=>{ map.createPane(n).style.zIndex = z; });
+[['choro',350],['rasters',380],['hazard',410],['rivers',415],['roads',420],['bounds',430],['points',450]].forEach(([n,z])=>{ map.createPane(n).style.zIndex = z; });
 map.getPane('rasters').style.pointerEvents = 'none';
 const ptsRenderer = L.canvas({pane:'points', padding:.3});
 const roadRenderer = L.canvas({pane:'roads', padding:.3});
+const riverRenderer = L.canvas({pane:'rivers', padding:.3});
+// HydroRIVERS line width by modelled mean discharge (m3/s)
+const RIV_BINS = [[50,2.4,'≥ 50'],[10,1.5,'10–50'],[1,.9,'1–10'],[0,.5,'< 1']];
+const rivW = d => RIV_BINS.find(b=>d>=b[0])[1];
 
 const SITE_OPACITY = .6;   // 40% transparent
 const SITE_MAX_R = 9;      // squares capped at 18 px; only the largest ~1% of sites reach it
@@ -364,6 +368,9 @@ const healthLayer = L.geoJSON(health, {pane:'points', pointToLayer:(f,ll)=>new D
   onEachFeature:(f,l)=>{const p=f.properties; l.bindPopup(()=>`<b>${p.name||'Unnamed facility'}</b><br>${p.kind}<br>${p.District}, ${p.Region}<br>${p.near_fh?'<b>Within 1 km of forecast flood zone</b><br>':''}${p.near_dv?'Within 1 km of derived flood zone<br>':''}${p.near_2023?'Within 1 km of 2023 flood extent<br>':''}<small>Location ${p.loc==='decoded DMS'?'decoded from degrees-minutes-seconds':'as reported'}</small>`);}});
 const roadLayer = L.geoJSON(roads, {pane:'roads', style:()=>({}), onEachFeature:(f,l)=>{const p=f.properties; l.bindTooltip(()=>`${p.name||'Unnamed '+p.highway} · ${p.highway}<br>${p.km_fh>0?p.km_fh.toFixed(1)+' km in forecast zone':''}${p.km_dv>0?(p.km_fh>0?' · ':'')+p.km_dv.toFixed(1)+' km in derived zone':''}${p.km_2023>0?(p.km_fh>0||p.km_dv>0?' · ':'')+p.km_2023.toFixed(1)+' km flooded in 2023':''}`,{sticky:true});}});
 roadLayer.options.renderer = roadRenderer; roadLayer.eachLayer(l=>l.options.renderer=roadRenderer);
+const riverLayer = L.geoJSON(rivers, {pane:'rivers', renderer:riverRenderer,
+  style:f=>({color:css('--stream'), weight:rivW(f.properties.dis), opacity:.85, lineCap:'round', lineJoin:'round'}),
+  onEachFeature:(f,l)=>l.bindTooltip(()=>`River · mean flow ${fmtq(f.properties.dis)} m³/s (modelled)<br><small>${full(f.properties.up)} km² upstream · HydroRIVERS</small>`, {sticky:true})});
 
 function styleAll(){
   distLayer.setStyle(f=>({color:css('--panel'), weight: f.properties.adm2_pcode===selected?2.5:.6, opacity:1,
@@ -466,6 +473,7 @@ const LAYERS = [
   {k:'fh', label:'FloodHub zones', sw:'--river', on:true, lyr:fhLayer},
   {k:'dv', label:'Derived flood zone', sw:'--derived', on:true, lyr:dvLayer},
   {k:'f23', label:'2023 flood extent', sw:'--flood23', on:false, lyr:f23Img},
+  {k:'rivers', label:'Rivers', sw:'--stream', on:true, lyr:riverLayer},
   {k:'gauges', label:'River gauges', sw:'--sev2', on:true, lyr:gaugeLayer},
   {k:'sites', label:'IDP sites', sw:'--site', on:true, lyr:siteLayer},
   {k:'health', label:'Health facilities', sw:'--health', on:true, lyr:healthLayer},
@@ -493,6 +501,11 @@ function drawLegend(){
   el.innerHTML = `<h4>Exposure index · ${MD().name}</h4>
     <div class="ramp">${['--r0','--r1','--r2','--r3','--r4'].map(t=>`<i style="background:var(${t})"></i>`).join('')}</div>
     <div class="ramp-l"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+    <div class="lgsec${layerOn.rivers?'':' off'}" style="display:flex;flex-direction:column;gap:6px;margin-top:4px">
+      <label class="tg"><input type="checkbox" id="lg-rivers" ${layerOn.rivers?'checked':''}><h4>Rivers (HydroRIVERS)</h4></label>
+      <div class="lg" style="gap:10px;flex-wrap:wrap">${RIV_BINS.map(b=>`<span style="display:inline-flex;align-items:center;gap:4px"><i style="display:inline-block;width:16px;height:${b[1]}px;background:var(--stream);border-radius:1px"></i>${b[2]}</span>`).join('')}</div>
+      <div class="lg" style="color:var(--muted)">Mean flow, m³/s (modelled)</div>
+    </div>
     <div class="lgsec${layerOn.gauges?'':' off'}" style="display:flex;flex-direction:column;gap:6px;margin-top:4px">
       <label class="tg"><input type="checkbox" id="lg-gauges" ${layerOn.gauges?'checked':''}><h4>River gauges</h4></label>
       <div class="seg2" role="group" aria-label="Colour gauges by">
@@ -518,6 +531,7 @@ function drawLegend(){
     </div>`;
   el.querySelector('#lg-health').addEventListener('change', e=>setLayer('health', e.target.checked));
   el.querySelector('#lg-gauges').addEventListener('change', e=>setLayer('gauges', e.target.checked));
+  el.querySelector('#lg-rivers').addEventListener('change', e=>setLayer('rivers', e.target.checked));
   el.querySelectorAll('[data-gm]').forEach(b=>b.addEventListener('click', ()=>{ gaugeMode = b.dataset.gm; styleAll(); drawLegend(); }));
   el.querySelector('#lg-sites').addEventListener('change', e=>setLayer('sites', e.target.checked));
 }
