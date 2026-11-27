@@ -42,7 +42,8 @@
 .leaflet-bar a+a{border-top:1px solid var(--line)}.leaflet-bar a:hover{background:var(--ground)}
 .leaflet-popup{position:absolute;text-align:center;margin-bottom:20px}
 .leaflet-popup-content-wrapper{padding:1px;text-align:left;border-radius:6px;background:var(--panel);color:var(--ink);box-shadow:0 4px 16px rgb(0 0 0 / .25)}
-.leaflet-popup-content{width:auto!important;margin:12px 26px 12px 14px;line-height:1.35;min-height:1px;font:13px/1.4 var(--f-body)}
+/* size popups to their content: with width:auto they shrink to the narrowest word inside the zero-width popup pane */
+.leaflet-popup-content{width:max-content!important;min-width:180px;max-width:min(320px,70vw);margin:12px 26px 12px 14px;line-height:1.35;min-height:1px;font:13px/1.4 var(--f-body)}
 .leaflet-popup-tip-container{width:40px;height:20px;position:absolute;left:50%;margin-top:-1px;margin-left:-20px;overflow:hidden;pointer-events:none}
 .leaflet-popup-tip{width:17px;height:17px;padding:1px;margin:-10px auto 0;transform:rotate(45deg);background:var(--panel)}
 .leaflet-popup-close-button{position:absolute;top:2px;right:4px;border:none;width:24px;height:24px;font:18px/24px var(--f-body);color:var(--muted);text-decoration:none;background:transparent}
@@ -291,6 +292,8 @@ map.getPane('rasters').style.pointerEvents = 'none';
 const ptsRenderer = L.canvas({pane:'points', padding:.3});
 const roadRenderer = L.canvas({pane:'roads', padding:.3});
 const riverRenderer = L.canvas({pane:'rivers', padding:.3});
+// keep point popups clear of the legend (bottom right), as the gauge popups do
+const PT_POPUP = {autoPanPaddingTopLeft:[20,20], autoPanPaddingBottomRight:[270,40]};
 // HydroRIVERS line width by modelled mean discharge (m3/s)
 const RIV_BINS = [[50,2.4,'≥ 50'],[10,1.5,'10–50'],[1,.9,'1–10'],[0,.5,'< 1']];
 const rivW = d => RIV_BINS.find(b=>d>=b[0])[1];
@@ -363,9 +366,9 @@ const gaugeLayer = L.geoJSON(gauges, {pane:'points', pointToLayer:(f,ll)=>L.circ
   onEachFeature:(f,l)=>{const p=f.properties; l.bindPopup(()=>gaugePopup(p), {maxWidth:360, minWidth:300, autoPanPaddingTopLeft:[20,20], autoPanPaddingBottomRight:[270,40]});}});
 gaugeLayer.on('popupopen', e=>wireHydro(e.popup.getElement()));
 const siteLayer = L.geoJSON(sites, {pane:'points', pointToLayer:(f,ll)=>new SquareMarker(ll,{renderer:ptsRenderer}), style:()=>({}),
-  onEachFeature:(f,l)=>{const p=f.properties; l.bindPopup(()=>`<b>${p.site}</b><br>${p.District}, ${p.Region}<br><span class="data">${full(p.ind)}</span> people · <span class="data">${full(p.hh)}</span> households<br>${p.near_fh?'<b>Within 1 km of forecast flood zone</b><br>':''}${p.near_dv?'Within 1 km of derived flood zone<br>':''}${p.near_2023?'Within 1 km of 2023 flood extent':''}<br><small class="data">${p.site_code}</small>`);}});
+  onEachFeature:(f,l)=>{const p=f.properties; l.bindPopup(()=>`<b>${p.site}</b><br>${p.District}, ${p.Region}<br><span class="data">${full(p.ind)}</span> people · <span class="data">${full(p.hh)}</span> households<br>${p.near_fh?'<b>Within 1 km of forecast flood zone</b><br>':''}${p.near_dv?'Within 1 km of derived flood zone<br>':''}${p.near_2023?'Within 1 km of 2023 flood extent':''}<br><small class="data">${p.site_code}</small>`, PT_POPUP);}});
 const healthLayer = L.geoJSON(health, {pane:'points', pointToLayer:(f,ll)=>new DiamondMarker(ll,{renderer:ptsRenderer}), style:()=>({}),
-  onEachFeature:(f,l)=>{const p=f.properties; l.bindPopup(()=>`<b>${p.name||'Unnamed facility'}</b><br>${p.kind}<br>${p.District}, ${p.Region}<br>${p.near_fh?'<b>Within 1 km of forecast flood zone</b><br>':''}${p.near_dv?'Within 1 km of derived flood zone<br>':''}${p.near_2023?'Within 1 km of 2023 flood extent<br>':''}<small>Location ${p.loc==='decoded DMS'?'decoded from degrees-minutes-seconds':'as reported'}</small>`);}});
+  onEachFeature:(f,l)=>{const p=f.properties; l.bindPopup(()=>`<b>${p.name||'Unnamed facility'}</b><br>${p.kind}<br>${p.District}, ${p.Region}<br>${p.near_fh?'<b>Within 1 km of forecast flood zone</b><br>':''}${p.near_dv?'Within 1 km of derived flood zone<br>':''}${p.near_2023?'Within 1 km of 2023 flood extent<br>':''}<small>Location ${p.loc==='decoded DMS'?'decoded from degrees-minutes-seconds':'as reported'}</small>`, PT_POPUP);}});
 const roadLayer = L.geoJSON(roads, {pane:'roads', style:()=>({}), onEachFeature:(f,l)=>{const p=f.properties; l.bindTooltip(()=>`${p.name||'Unnamed '+p.highway} · ${p.highway}<br>${p.km_fh>0?p.km_fh.toFixed(1)+' km in forecast zone':''}${p.km_dv>0?(p.km_fh>0?' · ':'')+p.km_dv.toFixed(1)+' km in derived zone':''}${p.km_2023>0?(p.km_fh>0||p.km_dv>0?' · ':'')+p.km_2023.toFixed(1)+' km flooded in 2023':''}`,{sticky:true});}});
 roadLayer.options.renderer = roadRenderer; roadLayer.eachLayer(l=>l.options.renderer=roadRenderer);
 const riverLayer = L.geoJSON(rivers, {pane:'rivers', renderer:riverRenderer,
